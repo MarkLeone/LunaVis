@@ -1,21 +1,23 @@
 /**
- * SolidMaterial: Flat color material with MVP transforms.
- * Creates render pipeline and bind groups for solid color rendering.
+ * SolidMaterial: Blinn-Phong lit material.
+ * Creates render pipeline and bind groups for lit rendering.
  *
  * Bind Group Layout:
- * - Group 0: Global uniforms (camera view-projection matrix)
- * - Group 1: Material uniforms (color)
+ * - Group 0: Global uniforms (camera + light)
+ * - Group 1: Material uniforms (color, shininess)
  * - Group 2: Object uniforms (model matrix) - managed by Mesh
  */
 
 import type { MaterialId, Color } from '@/types';
 import { materialId } from '@/types';
-import shaderSource from '@/shaders/solid.wgsl?raw';
+import shaderSource from '@/shaders/blinn-phong.wgsl?raw';
 
 /** Material configuration */
 export interface SolidMaterialOptions {
   /** RGBA color (0-1 range) */
   color: Color;
+  /** Specular shininess exponent (default: 32) */
+  shininess?: number;
 }
 
 /** GPU resources for a material */
@@ -27,23 +29,25 @@ export interface MaterialResources {
 }
 
 /**
- * Solid color material for basic rendering.
+ * Blinn-Phong lit material.
  *
  * @example
  * ```ts
- * const material = new SolidMaterial({ color: [1, 0, 0, 1] }); // Red
+ * const material = new SolidMaterial({ color: [1, 0, 0, 1], shininess: 32 });
  * const resources = material.createResources(device, format, globalBindGroupLayout);
  * ```
  */
 export class SolidMaterial {
   readonly id: MaterialId;
   private _color: Color;
+  private _shininess: number;
   private resources: MaterialResources | null = null;
   private needsUpdate = true;
 
   constructor(options: SolidMaterialOptions) {
     this.id = materialId(`mat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     this._color = options.color;
+    this._shininess = options.shininess ?? 32;
   }
 
   /** Get current color */
@@ -54,6 +58,17 @@ export class SolidMaterial {
   /** Set color (marks material for GPU update) */
   set color(value: Color) {
     this._color = value;
+    this.needsUpdate = true;
+  }
+
+  /** Get shininess */
+  get shininess(): number {
+    return this._shininess;
+  }
+
+  /** Set shininess (marks material for GPU update) */
+  set shininess(value: number) {
+    this._shininess = value;
     this.needsUpdate = true;
   }
 
@@ -118,15 +133,18 @@ export class SolidMaterial {
       code: shaderSource,
     });
 
-    // Uniform buffer for color (16 bytes for vec4)
+    // Uniform buffer for color + shininess (32 bytes: vec4 + f32 + vec3 padding)
     const uniformBuffer = device.createBuffer({
       label: `${this.id}-uniforms`,
-      size: 16, // vec4<f32>
+      size: 32,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    // Write initial color
-    device.queue.writeBuffer(uniformBuffer, 0, new Float32Array(this._color) as unknown as ArrayBuffer);
+    // Write initial uniforms
+    const uniformData = new Float32Array(8); // 32 bytes
+    uniformData.set(this._color, 0);          // color: vec4 at offset 0
+    uniformData[4] = this._shininess;          // shininess: f32 at offset 16
+    device.queue.writeBuffer(uniformBuffer, 0, uniformData as unknown as ArrayBuffer);
 
     // Material bind group layout (group 1)
     const materialBindGroupLayout = device.createBindGroupLayout({
@@ -215,16 +233,20 @@ export class SolidMaterial {
   }
 
   /**
-   * Update GPU uniform buffer if color has changed.
+   * Update GPU uniform buffer if material properties changed.
    * Call before rendering if material properties changed.
    */
   updateUniforms(device: GPUDevice): void {
     if (!this.resources || !this.needsUpdate) return;
 
+    const uniformData = new Float32Array(8); // 32 bytes
+    uniformData.set(this._color, 0);
+    uniformData[4] = this._shininess;
+
     device.queue.writeBuffer(
       this.resources.uniformBuffer,
       0,
-      new Float32Array(this._color) as unknown as ArrayBuffer
+      uniformData as unknown as ArrayBuffer
     );
     this.needsUpdate = false;
   }

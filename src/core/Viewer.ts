@@ -5,18 +5,28 @@
  * resize handling, and the reactive render loop (dirty-flag pattern).
  */
 
-import { mat4 } from 'wgpu-matrix';
 import type { GPUContext, ViewerOptions, Color, RenderState } from '@/types';
 import type { Mesh } from '@/objects/Mesh';
 import type { Scene } from './Scene';
 import type { Camera } from './Camera';
+import type { DirectionalLight } from '@/objects/DirectionalLight';
 
 /** Default clear color: Cornflower Blue (#6495ED) */
 const DEFAULT_CLEAR_COLOR: Color = [0.392, 0.584, 0.929, 1.0];
 
+/**
+ * Global uniform buffer layout (128 bytes):
+ * - viewProjection: mat4x4<f32> (64 bytes)
+ * - cameraPosition: vec3<f32> + pad (16 bytes)
+ * - lightDirection: vec3<f32> + pad (16 bytes)
+ * - lightColor: vec3<f32> + pad (16 bytes)
+ * - ambientColor: vec3<f32> + pad (16 bytes)
+ */
+const GLOBAL_UNIFORM_SIZE = 128;
+
 /** GPU resources for global uniforms */
 interface GlobalResources {
-  /** View-projection matrix buffer */
+  /** Combined camera + light uniform buffer */
   uniformBuffer: GPUBuffer;
   /** Bind group for global uniforms */
   bindGroup: GPUBindGroup;
@@ -54,6 +64,8 @@ export class Viewer {
 
   private scene: Scene | null = null;
   private camera: Camera | null = null;
+  private light: DirectionalLight | null = null;
+  private _ambientColor: Color = [0.1, 0.1, 0.1, 1.0];
 
   constructor(options: ViewerOptions) {
     this.canvas = options.canvas;
@@ -120,25 +132,25 @@ export class Viewer {
   }
 
   /**
-   * Create global uniform resources (view-projection matrix).
+   * Create global uniform resources (camera + light).
    */
   private createGlobalResources(): void {
     if (!this.gpu) return;
     const { device } = this.gpu;
 
-    // View-projection matrix buffer (64 bytes for mat4x4)
+    // Global uniform buffer (128 bytes for camera + light data)
     const uniformBuffer = device.createBuffer({
       label: 'global-uniforms',
-      size: 64,
+      size: GLOBAL_UNIFORM_SIZE,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    // Bind group layout
+    // Bind group layout - visible to both vertex (for VP matrix) and fragment (for lighting)
     const bindGroupLayout = device.createBindGroupLayout({
       label: 'global-bindGroupLayout',
       entries: [{
         binding: 0,
-        visibility: GPUShaderStage.VERTEX,
+        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
         buffer: { type: 'uniform' },
       }],
     });
@@ -263,6 +275,36 @@ export class Viewer {
   }
 
   /**
+   * Set the directional light for the scene.
+   */
+  setLight(light: DirectionalLight): void {
+    this.light = light;
+    this.requestRender();
+  }
+
+  /**
+   * Get the current light (for UI binding).
+   */
+  getLight(): DirectionalLight | null {
+    return this.light;
+  }
+
+  /**
+   * Set ambient light color.
+   */
+  setAmbientColor(color: Color): void {
+    this._ambientColor = color;
+    this.requestRender();
+  }
+
+  /**
+   * Get ambient color (for UI binding).
+   */
+  get ambientColor(): Color {
+    return this._ambientColor;
+  }
+
+  /**
    * Add a mesh to the scene and create its GPU resources.
    */
   addMesh(mesh: Mesh): void {
@@ -339,23 +381,45 @@ export class Viewer {
 
     const { device, context } = this.gpu;
 
-    // Update camera uniforms if camera is set
+    // Build global uniform data (128 bytes)
+    const uniformData = new Float32Array(32); // 128 bytes / 4
+
+    // viewProjection matrix (64 bytes at offset 0)
     if (this.camera) {
-      const vpMatrix = this.camera.viewProjectionMatrix;
-      device.queue.writeBuffer(
-        this.globalResources.uniformBuffer,
-        0,
-        vpMatrix as unknown as ArrayBuffer
-      );
-    } else {
-      // Use identity matrix if no camera
-      const identity = mat4.identity();
-      device.queue.writeBuffer(
-        this.globalResources.uniformBuffer,
-        0,
-        identity as unknown as ArrayBuffer
-      );
+      uniformData.set(this.camera.viewProjectionMatrix as Float32Array, 0);
     }
+    // else: identity (zeros work as identity for testing, but camera should be set)
+
+    // cameraPosition (16 bytes at offset 64)
+    if (this.camera) {
+      uniformData.set(this.camera.position as Float32Array, 16);
+    }
+
+    // lightDirection (16 bytes at offset 80)
+    if (this.light) {
+      uniformData.set(this.light.direction as Float32Array, 20);
+    } else {
+      // Default light direction: from top-right-front
+      uniformData.set([-0.5, -1.0, -0.5], 20);
+    }
+
+    // lightColor (16 bytes at offset 96)
+    if (this.light) {
+      uniformData.set(this.light.effectiveColor as Float32Array, 24);
+    } else {
+      // Default white light
+      uniformData.set([1.0, 1.0, 1.0], 24);
+    }
+
+    // ambientColor (16 bytes at offset 112)
+    uniformData.set(this._ambientColor.slice(0, 3), 28);
+
+    // Write to GPU
+    device.queue.writeBuffer(
+      this.globalResources.uniformBuffer,
+      0,
+      uniformData as unknown as ArrayBuffer
+    );
 
     // Get current texture to render to
     const textureView = context.getCurrentTexture().createView();
