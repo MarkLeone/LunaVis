@@ -745,12 +745,12 @@ async function loadKTX2Texture(device: GPUDevice, url: string): Promise<GPUTextu
 }
 ```
 
-#### 6. UV-Mapped Sphere Model
+#### 6. UV-Mapped Sphere Model ✅
 
-Add a glTF sphere model with proper equirectangular UV mapping:
-- Export from Blender with UV sphere + proper unwrap
-- Or find a suitable CC0/public domain model online
-- UVs should map correctly to equirectangular projection (longitude/latitude)
+Using the NASA CGI Moon Kit from Sketchfab (CC-BY-4.0, Thomas Flynn):
+- `assets/lunar/scene.gltf` + `scene.bin` (~1M triangles, 516k vertices)
+- Includes `TEXCOORD_0` for equirectangular UV mapping
+- `scene.bin` tracked via Git LFS (75MB)
 
 ### Files to Create/Modify
 
@@ -762,7 +762,7 @@ Add a glTF sphere model with proper equirectangular UV mapping:
 | `src/shaders/textured-blinn-phong.wgsl` | New file |
 | `src/loaders/KTX2Loader.ts` | New file — load KTX2 with pre-baked mipmaps |
 | `src/main.ts` | Add Moon demo option |
-| `assets/models/` | Add UV-mapped sphere glTF |
+| `assets/lunar/scene.gltf` | UV-mapped sphere ✅ |
 | `assets/textures/` | Add `moon_color.ktx2` (converted from NASA source) |
 | `package.json` | Add `@loaders.gl/textures` dependency |
 

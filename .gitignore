@@ -22,3 +22,4 @@ assets/**/*.tmp
 assets/**/*.ktx2
 # Keep committed models explicitly tracked
 !assets/models/*.glb
+!assets/lunar/scene.gltf

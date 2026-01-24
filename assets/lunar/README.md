@@ -52,6 +52,8 @@ The full build (`npm run build`) runs both download and conversion automatically
 
 ## Attribution
 
+### Lunar Texture Data
+
 **Source:** [NASA Scientific Visualization Studio - CGI Moon Kit](https://svs.gsfc.nasa.gov/4720)
 
 **License:** NASA media is generally not copyrighted (see [NASA Media Usage Guidelines](https://www.nasa.gov/nasa-brand-center/images-and-media/))
@@ -65,3 +67,18 @@ The full build (`npm run build`) runs both download and conversion automatically
 **Datasets:**
 - DEM (Digital Elevation Map) [LRO: LOLA]
 - LROC WAC Color Mosaic (Natural Color Hapke Normalized WAC Mosaic) [Lunar Reconnaissance Orbiter: LRO Camera]
+
+### Moon Sphere Model
+
+**Source:** [NASA CGI Moon Kit on Sketchfab](https://sketchfab.com/3d-models/nasa-cgi-moon-kit-1c496b3b57304526b5b9d1cf9c1087fc)
+
+**Author:** [Thomas Flynn (nebulousflynn)](https://sketchfab.com/nebulousflynn)
+
+**License:** [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) - Author must be credited. Commercial use is allowed.
+
+**Files:**
+- `scene.gltf` - UV-mapped sphere mesh (~1M triangles, 516k vertices)
+- `scene.bin` - Binary geometry data (referenced by scene.gltf)
+- `textures/None_baseColor.jpeg` - Bundled texture (not used - we use `moon_color.ktx2` instead)
+
+**Usage:** Only the mesh geometry (positions, normals, UVs, indices) is extracted from this model. The bundled JPEG texture is ignored in favor of the higher-quality NASA color map (`moon_color.ktx2`) loaded separately via KTX2Loader.
