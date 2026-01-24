@@ -15,6 +15,9 @@ export type MaterialId = Brand<string, 'MaterialId'>;
 /** Type-safe geometry identifier */
 export type GeometryId = Brand<string, 'GeometryId'>;
 
+/** Type-safe object identifier */
+export type ObjectId = Brand<string, 'ObjectId'>;
+
 /** 3D vector as tuple (x, y, z) */
 export type Vec3 = readonly [number, number, number];
 
@@ -73,6 +76,13 @@ export function materialId(id: string): MaterialId {
  */
 export function geometryId(id: string): GeometryId {
   return id as GeometryId;
+}
+
+/**
+ * Creates a branded ObjectId from a string.
+ */
+export function objectId(id: string): ObjectId {
+  return id as ObjectId;
 }
 
 /** Type guard for successful Result */

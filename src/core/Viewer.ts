@@ -5,11 +5,30 @@
  * resize handling, and the reactive render loop (dirty-flag pattern).
  */
 
+import { mat4 } from 'wgpu-matrix';
 import type { GPUContext, ViewerOptions, Color, RenderState } from '@/types';
 import type { Mesh } from '@/objects/Mesh';
+import type { Scene } from './Scene';
+import type { Camera } from './Camera';
 
 /** Default clear color: Cornflower Blue (#6495ED) */
 const DEFAULT_CLEAR_COLOR: Color = [0.392, 0.584, 0.929, 1.0];
+
+/** GPU resources for global uniforms */
+interface GlobalResources {
+  /** View-projection matrix buffer */
+  uniformBuffer: GPUBuffer;
+  /** Bind group for global uniforms */
+  bindGroup: GPUBindGroup;
+  /** Bind group layout (shared with materials) */
+  bindGroupLayout: GPUBindGroupLayout;
+}
+
+/** Depth buffer resources */
+interface DepthResources {
+  texture: GPUTexture;
+  view: GPUTextureView;
+}
 
 /**
  * Main viewer class that encapsulates WebGPU setup and render loop.
@@ -18,7 +37,8 @@ const DEFAULT_CLEAR_COLOR: Color = [0.392, 0.584, 0.929, 1.0];
  * ```ts
  * const viewer = new Viewer({ canvas: document.getElementById('canvas') });
  * await viewer.init();
- * // Viewer is now rendering
+ * viewer.setScene(scene);
+ * viewer.setCamera(camera);
  * ```
  */
 export class Viewer {
@@ -26,10 +46,14 @@ export class Viewer {
   private readonly clearColor: Color;
 
   private gpu: GPUContext | null = null;
+  private globalResources: GlobalResources | null = null;
+  private depthResources: DepthResources | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private renderState: RenderState = { dirty: true, frameId: null };
   private disposed = false;
-  private meshes: Mesh[] = [];
+
+  private scene: Scene | null = null;
+  private camera: Camera | null = null;
 
   constructor(options: ViewerOptions) {
     this.canvas = options.canvas;
@@ -82,11 +106,80 @@ export class Viewer {
 
     this.gpu = { adapter, device, context, format };
 
+    // Create global resources
+    this.createGlobalResources();
+
     // Setup resize handling
     this.setupResizeObserver();
 
+    // Create initial depth buffer
+    this.createDepthBuffer();
+
     // Start render loop
     this.requestRender();
+  }
+
+  /**
+   * Create global uniform resources (view-projection matrix).
+   */
+  private createGlobalResources(): void {
+    if (!this.gpu) return;
+    const { device } = this.gpu;
+
+    // View-projection matrix buffer (64 bytes for mat4x4)
+    const uniformBuffer = device.createBuffer({
+      label: 'global-uniforms',
+      size: 64,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Bind group layout
+    const bindGroupLayout = device.createBindGroupLayout({
+      label: 'global-bindGroupLayout',
+      entries: [{
+        binding: 0,
+        visibility: GPUShaderStage.VERTEX,
+        buffer: { type: 'uniform' },
+      }],
+    });
+
+    // Bind group
+    const bindGroup = device.createBindGroup({
+      label: 'global-bindGroup',
+      layout: bindGroupLayout,
+      entries: [{
+        binding: 0,
+        resource: { buffer: uniformBuffer },
+      }],
+    });
+
+    this.globalResources = { uniformBuffer, bindGroup, bindGroupLayout };
+  }
+
+  /**
+   * Create depth buffer for depth testing.
+   */
+  private createDepthBuffer(): void {
+    if (!this.gpu) return;
+    const { device } = this.gpu;
+    const { width, height } = this.pixelSize;
+
+    // Destroy previous depth buffer if exists
+    if (this.depthResources) {
+      this.depthResources.texture.destroy();
+    }
+
+    const texture = device.createTexture({
+      label: 'depth-texture',
+      size: { width, height },
+      format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    this.depthResources = {
+      texture,
+      view: texture.createView(),
+    };
   }
 
   /**
@@ -114,6 +207,8 @@ export class Viewer {
     }
 
     this.resizeObserver?.disconnect();
+    this.depthResources?.texture.destroy();
+    this.globalResources?.uniformBuffer.destroy();
     this.gpu?.device.destroy();
     this.gpu = null;
   }
@@ -140,18 +235,52 @@ export class Viewer {
     };
   }
 
-  /**
-   * Add a mesh to the scene.
-   * Creates GPU resources if not already created.
-   */
-  addMesh(mesh: Mesh): void {
-    if (!this.gpu) {
+  /** Get the global bind group layout (for materials) */
+  get globalBindGroupLayout(): GPUBindGroupLayout {
+    if (!this.globalResources) {
       throw new Error('Viewer not initialized');
     }
-    if (!mesh.isReady) {
-      mesh.createGPUResources(this.gpu.device, this.gpu.format);
+    return this.globalResources.bindGroupLayout;
+  }
+
+  /**
+   * Set the active scene to render.
+   */
+  setScene(scene: Scene): void {
+    this.scene = scene;
+    this.requestRender();
+  }
+
+  /**
+   * Set the active camera for rendering.
+   */
+  setCamera(camera: Camera): void {
+    this.camera = camera;
+    // Update camera aspect ratio
+    const { width, height } = this.pixelSize;
+    camera.updateAspect(width, height);
+    this.requestRender();
+  }
+
+  /**
+   * Add a mesh to the scene and create its GPU resources.
+   */
+  addMesh(mesh: Mesh): void {
+    if (!this.gpu || !this.globalResources) {
+      throw new Error('Viewer not initialized');
     }
-    this.meshes.push(mesh);
+    if (!this.scene) {
+      throw new Error('No scene set. Call setScene() first.');
+    }
+
+    if (!mesh.isReady) {
+      mesh.createGPUResources(
+        this.gpu.device,
+        this.gpu.format,
+        this.globalResources.bindGroupLayout
+      );
+    }
+    this.scene.add(mesh);
     this.requestRender();
   }
 
@@ -159,16 +288,10 @@ export class Viewer {
    * Remove a mesh from the scene.
    */
   removeMesh(mesh: Mesh): void {
-    const index = this.meshes.indexOf(mesh);
-    if (index !== -1) {
-      this.meshes.splice(index, 1);
+    if (this.scene) {
+      this.scene.remove(mesh);
       this.requestRender();
     }
-  }
-
-  /** Get all meshes in the scene */
-  getMeshes(): readonly Mesh[] {
-    return this.meshes;
   }
 
   /**
@@ -178,6 +301,11 @@ export class Viewer {
   private setupResizeObserver(): void {
     this.resizeObserver = new ResizeObserver(() => {
       this.updateCanvasSize();
+      this.createDepthBuffer();
+      if (this.camera) {
+        const { width, height } = this.pixelSize;
+        this.camera.updateAspect(width, height);
+      }
       this.requestRender();
     });
     this.resizeObserver.observe(this.canvas);
@@ -202,15 +330,32 @@ export class Viewer {
 
   /**
    * Main render loop callback.
-   * Currently just clears to the background color.
    */
   private renderLoop(): void {
     this.renderState.dirty = false;
     this.renderState.frameId = null;
 
-    if (!this.gpu || this.disposed) return;
+    if (!this.gpu || !this.globalResources || !this.depthResources || this.disposed) return;
 
     const { device, context } = this.gpu;
+
+    // Update camera uniforms if camera is set
+    if (this.camera) {
+      const vpMatrix = this.camera.viewProjectionMatrix;
+      device.queue.writeBuffer(
+        this.globalResources.uniformBuffer,
+        0,
+        vpMatrix as unknown as ArrayBuffer
+      );
+    } else {
+      // Use identity matrix if no camera
+      const identity = mat4.identity();
+      device.queue.writeBuffer(
+        this.globalResources.uniformBuffer,
+        0,
+        identity as unknown as ArrayBuffer
+      );
+    }
 
     // Get current texture to render to
     const textureView = context.getCurrentTexture().createView();
@@ -234,11 +379,22 @@ export class Viewer {
         loadOp: 'clear',
         storeOp: 'store',
       }],
+      depthStencilAttachment: {
+        view: this.depthResources.view,
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+      },
     });
 
-    // Render all meshes
-    for (const mesh of this.meshes) {
-      mesh.render(renderPass, device);
+    // Render all meshes in the scene
+    if (this.scene) {
+      const meshes = this.scene.getMeshes();
+      for (const mesh of meshes) {
+        if (mesh.isReady) {
+          mesh.render(renderPass, device, this.globalResources.bindGroup);
+        }
+      }
     }
 
     renderPass.end();

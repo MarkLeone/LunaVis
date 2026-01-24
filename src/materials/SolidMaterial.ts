@@ -1,6 +1,11 @@
 /**
- * SolidMaterial: Flat color material with no lighting.
- * Creates render pipeline and bind group for solid color rendering.
+ * SolidMaterial: Flat color material with MVP transforms.
+ * Creates render pipeline and bind groups for solid color rendering.
+ *
+ * Bind Group Layout:
+ * - Group 0: Global uniforms (camera view-projection matrix)
+ * - Group 1: Material uniforms (color)
+ * - Group 2: Object uniforms (model matrix) - managed by Mesh
  */
 
 import type { MaterialId, Color } from '@/types';
@@ -26,7 +31,7 @@ export interface MaterialResources {
  * @example
  * ```ts
  * const material = new SolidMaterial({ color: [1, 0, 0, 1] }); // Red
- * const resources = material.createResources(device, format);
+ * const resources = material.createResources(device, format, globalBindGroupLayout);
  * ```
  */
 export class SolidMaterial {
@@ -52,10 +57,56 @@ export class SolidMaterial {
   }
 
   /**
+   * Create the bind group layouts used by this material's pipeline.
+   * Static method so Viewer can create matching layouts.
+   */
+  static createBindGroupLayouts(device: GPUDevice): {
+    globalLayout: GPUBindGroupLayout;
+    materialLayout: GPUBindGroupLayout;
+    modelLayout: GPUBindGroupLayout;
+  } {
+    // Group 0: Global uniforms (view-projection matrix)
+    const globalLayout = device.createBindGroupLayout({
+      label: 'global-bindGroupLayout',
+      entries: [{
+        binding: 0,
+        visibility: GPUShaderStage.VERTEX,
+        buffer: { type: 'uniform' },
+      }],
+    });
+
+    // Group 1: Material uniforms (color)
+    const materialLayout = device.createBindGroupLayout({
+      label: 'material-bindGroupLayout',
+      entries: [{
+        binding: 0,
+        visibility: GPUShaderStage.FRAGMENT,
+        buffer: { type: 'uniform' },
+      }],
+    });
+
+    // Group 2: Object uniforms (model matrix)
+    const modelLayout = device.createBindGroupLayout({
+      label: 'model-bindGroupLayout',
+      entries: [{
+        binding: 0,
+        visibility: GPUShaderStage.VERTEX,
+        buffer: { type: 'uniform' },
+      }],
+    });
+
+    return { globalLayout, materialLayout, modelLayout };
+  }
+
+  /**
    * Create GPU resources (pipeline, bind group, uniform buffer).
    * Call once after device is ready.
    */
-  createResources(device: GPUDevice, format: GPUTextureFormat): MaterialResources {
+  createResources(
+    device: GPUDevice,
+    format: GPUTextureFormat,
+    globalBindGroupLayout: GPUBindGroupLayout
+  ): MaterialResources {
     if (this.resources) {
       return this.resources;
     }
@@ -76,30 +127,40 @@ export class SolidMaterial {
     // Write initial color
     device.queue.writeBuffer(uniformBuffer, 0, new Float32Array(this._color) as unknown as ArrayBuffer);
 
-    // Bind group layout
-    const bindGroupLayout = device.createBindGroupLayout({
+    // Material bind group layout (group 1)
+    const materialBindGroupLayout = device.createBindGroupLayout({
       label: `${this.id}-bindGroupLayout`,
       entries: [{
         binding: 0,
-        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+        visibility: GPUShaderStage.FRAGMENT,
         buffer: { type: 'uniform' },
       }],
     });
 
-    // Bind group
+    // Material bind group
     const bindGroup = device.createBindGroup({
       label: `${this.id}-bindGroup`,
-      layout: bindGroupLayout,
+      layout: materialBindGroupLayout,
       entries: [{
         binding: 0,
         resource: { buffer: uniformBuffer },
       }],
     });
 
-    // Pipeline layout
+    // Model bind group layout (group 2)
+    const modelBindGroupLayout = device.createBindGroupLayout({
+      label: 'model-bindGroupLayout',
+      entries: [{
+        binding: 0,
+        visibility: GPUShaderStage.VERTEX,
+        buffer: { type: 'uniform' },
+      }],
+    });
+
+    // Pipeline layout with all three groups
     const pipelineLayout = device.createPipelineLayout({
       label: `${this.id}-pipelineLayout`,
-      bindGroupLayouts: [bindGroupLayout],
+      bindGroupLayouts: [globalBindGroupLayout, materialBindGroupLayout, modelBindGroupLayout],
     });
 
     // Render pipeline
@@ -139,6 +200,11 @@ export class SolidMaterial {
         topology: 'triangle-list',
         cullMode: 'back',
         frontFace: 'ccw',
+      },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
       },
     });
 

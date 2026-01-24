@@ -1,12 +1,15 @@
 /**
  * LunaVis entry point.
- * Initializes the WebGPU viewer and handles setup errors.
+ * Initializes the WebGPU viewer with a rotating cube and orbit controls.
  */
 
 import { Viewer } from '@/core/Viewer';
-import { createTriangle } from '@/geometry/primitives';
+import { Scene } from '@/core/Scene';
+import { Camera } from '@/core/Camera';
+import { createCube } from '@/geometry/primitives';
 import { SolidMaterial } from '@/materials/SolidMaterial';
 import { Mesh } from '@/objects/Mesh';
+import { OrbitControls } from '@/controls/OrbitControls';
 
 /** Package version for logging */
 const VERSION = '0.1.0';
@@ -55,20 +58,55 @@ async function main(): Promise<void> {
   }
 
   try {
+    // Initialize viewer
     const viewer = new Viewer({ canvas });
     await viewer.init();
 
-    // Create a red triangle
-    const geometry = createTriangle();
-    const material = new SolidMaterial({ color: [1.0, 0.2, 0.2, 1.0] }); // Red
-    const mesh = new Mesh(geometry, material);
+    // Create scene and camera
+    const scene = new Scene();
+    const camera = new Camera({ fov: Math.PI / 4 });
 
-    // Add to scene
-    viewer.addMesh(mesh);
-    emitEvent('mesh-created', { id: mesh.id });
+    // Position camera to view the cube
+    camera.setPosition(0, 2, 5);
+    camera.lookAt([0, 0, 0]);
+
+    // Set up viewer
+    viewer.setScene(scene);
+    viewer.setCamera(camera);
+
+    // Create orbit controls
+    const controls = new OrbitControls(camera, canvas);
+    controls.onUpdate = () => viewer.requestRender();
+
+    // Create a cube mesh
+    const geometry = createCube();
+    const material = new SolidMaterial({ color: [0.8, 0.3, 0.2, 1.0] }); // Red-orange
+    const cube = new Mesh(geometry, material);
+
+    // Add cube to scene
+    viewer.addMesh(cube);
+    emitEvent('mesh-created', { id: cube.meshId });
+
+    // Animate cube rotation
+    let lastTime = performance.now();
+    function animate(time: number): void {
+      const dt = (time - lastTime) / 1000;
+      lastTime = time;
+
+      // Rotate cube around Y axis
+      const rotation = cube.rotation;
+      cube.setRotation(rotation[0]!, rotation[1]! + dt * 0.5, rotation[2]!);
+
+      viewer.requestRender();
+      requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
 
     // Expose viewer to console for debugging
-    (window as unknown as { viewer: Viewer }).viewer = viewer;
+    (window as unknown as { viewer: Viewer; scene: Scene; camera: Camera; cube: Mesh }).viewer = viewer;
+    (window as unknown as { viewer: Viewer; scene: Scene; camera: Camera; cube: Mesh }).scene = scene;
+    (window as unknown as { viewer: Viewer; scene: Scene; camera: Camera; cube: Mesh }).camera = camera;
+    (window as unknown as { viewer: Viewer; scene: Scene; camera: Camera; cube: Mesh }).cube = cube;
 
     emitEvent('ready');
   } catch (error) {
