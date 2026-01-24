@@ -81,12 +81,7 @@ tests/
 - Workaround: Use `.cjs` extension for all Playwright files
 - Config, helpers, and specs all use CommonJS
 
-**Commands:**
-```bash
-npm run test        # Unit tests (Vitest)
-npm run test:smoke  # Smoke test (~5s)
-npm run test:e2e    # Full E2E suite
-```
+See [BuildAndTest.md](BuildAndTest.md) for test commands and procedures.
 
 ---
 

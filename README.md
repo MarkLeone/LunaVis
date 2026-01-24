@@ -52,9 +52,11 @@ src/
 
 ```bash
 npm run test        # Unit tests (Vitest)
-npm run test:smoke  # E2E smoke test (Playwright + Firefox, ~5s)
+npm run test:smoke  # E2E smoke test (~5s)
 npm run test:e2e    # Full E2E suite
 ```
+
+See [docs/BuildAndTest.md](docs/BuildAndTest.md) for detailed procedures.
 
 ## Tech Stack
 
@@ -69,6 +71,7 @@ npm run test:e2e    # Full E2E suite
 See `docs/` for detailed documentation:
 - `Plan.md` — Original design document
 - `ImplementationPlan.md` — Refined scope and milestones
+- `BuildAndTest.md` — Build, test, and development procedures
 - `Configuration.md` — Project setup reference
 - `DevLog.md` — Development log and decisions
 

@@ -352,19 +352,4 @@ Screenshot comparison for detecting rendering changes. Will add after M4 when vi
 
 ## Commands
 
-```bash
-# Development
-npm run dev          # Start Vite dev server
-
-# Unit Testing
-npm run test         # Run Vitest unit tests
-npm run test:watch   # Watch mode
-
-# E2E Testing
-npm run test:smoke   # Quick smoke test (< 10s)
-npm run test:e2e     # Full E2E suite (< 30s)
-
-# Build
-npm run build        # Production build
-npm run preview      # Preview production build
-```
+See [BuildAndTest.md](BuildAndTest.md) for detailed build, test, and development procedures.

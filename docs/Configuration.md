@@ -28,16 +28,9 @@ Project configuration for the WebGPU 3D viewer.
 | `@playwright/test` | ^1.58.0 | E2E testing with Firefox |
 | `@webgpu/types` | ^0.1.54 | WebGPU TypeScript definitions |
 
-**Scripts:**
-```bash
-npm run dev        # Start Vite dev server (port 3000)
-npm run build      # Type-check + production build
-npm run preview    # Preview production build
-npm run test       # Run unit tests once (Vitest)
-npm run test:watch # Run unit tests in watch mode
-npm run test:smoke # Quick E2E smoke test (~5s)
-npm run test:e2e   # Full E2E test suite
-```
+**Scripts:** `dev`, `build`, `preview`, `test`, `test:watch`, `test:smoke`, `test:e2e`
+
+See [BuildAndTest.md](BuildAndTest.md) for usage details.
 
 ---
 

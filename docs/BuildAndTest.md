@@ -1,0 +1,227 @@
+# Build and Test Procedures
+
+Practical guide for building, testing, and developing LunaVis.
+
+## Prerequisites
+
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| Node.js | 18.x, 19.x, 20.x, or 22+ | v19 works with warnings |
+| npm | 9.x+ | Included with Node |
+| Firefox | Recent | WebGPU must be enabled |
+
+### Enable WebGPU in Firefox
+
+1. Open Firefox
+2. Navigate to `about:config`
+3. Search for `dom.webgpu.enabled`
+4. Set to `true`
+5. Restart Firefox
+
+> **Note:** Chrome has Intel Arc GPU driver issues on Linux hybrid laptops. Use Firefox for development.
+
+## Installation
+
+```bash
+cd LunaVis
+npm install
+```
+
+Expected output includes engine warnings for Node 19 — these are non-fatal.
+
+## Development
+
+### Start Dev Server
+
+```bash
+npm run dev
+```
+
+Opens Vite dev server at http://localhost:3000 (or next available port).
+
+**Features:**
+- Hot Module Replacement (HMR) — changes apply instantly
+- TypeScript compilation on-the-fly
+- Raw `.wgsl` shader imports
+
+### Verify It Works
+
+1. Open Firefox at http://localhost:3000
+2. Canvas should display cornflower blue (#6495ED)
+3. Console should show:
+   ```
+   [LunaVis] Ready
+   {"event":"ready","version":"0.1.0"}
+   ```
+
+## Testing
+
+### Unit Tests (Vitest)
+
+Fast, Node-based tests for pure functions and type utilities.
+
+```bash
+# Run once
+npm run test
+
+# Watch mode (re-runs on file changes)
+npm run test:watch
+```
+
+**Location:** `tests/*.test.ts`
+
+**What's tested:**
+- Type helpers (`ok()`, `err()`, `isOk()`, `isErr()`)
+- Branded ID constructors (`meshId()`, `materialId()`)
+- (Future) Geometry math, buffer utilities
+
+### Smoke Test (Playwright + Firefox)
+
+Quick E2E verification that the app starts without errors.
+
+```bash
+npm run test:smoke
+```
+
+**Target time:** < 10 seconds (typically ~5s)
+
+**What's verified:**
+1. Firefox launches with WebGPU enabled
+2. Page loads without JavaScript errors
+3. `[LunaVis] Ready` marker appears in console
+4. Structured event `{"event":"ready",...}` is logged
+5. Canvas has non-zero dimensions
+
+**Note:** Opens a visible Firefox window briefly (WebGPU requires headed mode).
+
+### Full E2E Suite (Playwright)
+
+All E2E tests including milestone-specific verifications.
+
+```bash
+npm run test:e2e
+```
+
+**Location:** `tests/e2e/*.spec.cjs`
+
+### Run All Tests
+
+```bash
+npm run test && npm run test:smoke
+```
+
+## Build
+
+### Production Build
+
+```bash
+npm run build
+```
+
+**Steps:**
+1. TypeScript type-checking (`tsc`)
+2. Vite production build (minified, tree-shaken)
+
+**Output:** `dist/`
+
+### Preview Production Build
+
+```bash
+npm run preview
+```
+
+Serves the `dist/` folder locally to verify the production build.
+
+## Type Checking
+
+```bash
+npx tsc --noEmit
+```
+
+Runs TypeScript compiler without emitting files — useful for CI or pre-commit checks.
+
+## Common Issues
+
+### Port Already in Use
+
+Vite automatically tries the next port (3001, 3002, etc.). Check terminal output for actual URL.
+
+### WebGPU Not Supported
+
+Error: `WebGPU is not supported in this browser`
+
+**Solution:** Use Firefox with `dom.webgpu.enabled: true` in `about:config`.
+
+### Chrome GPU Errors
+
+Error: `VK_ERROR_OUT_OF_DEVICE_MEMORY`
+
+**Cause:** Intel Arc Vulkan driver issues on hybrid GPU laptops.
+
+**Solution:** Use Firefox instead of Chrome for development.
+
+### Playwright ESM Errors
+
+Error: `Playwright requires Node.js 18.19 or higher to load esm modules`
+
+**Solution:** All Playwright files use `.cjs` extension to avoid ESM issues with Node 19.
+
+### Vitest Picks Up E2E Tests
+
+Error: `test.describe() to be called here`
+
+**Solution:** Vitest config excludes `**/e2e/**` directory. Verify `vitest.config.ts` has:
+```typescript
+exclude: ['**/node_modules/**', '**/e2e/**']
+```
+
+## Development Workflow
+
+### Typical Iteration Cycle
+
+1. Start dev server: `npm run dev`
+2. Open Firefox at localhost URL
+3. Make code changes (HMR applies automatically)
+4. Check browser console for errors
+5. Run smoke test before committing: `npm run test:smoke`
+
+### Before Committing
+
+```bash
+npm run test          # Unit tests pass
+npm run test:smoke    # E2E smoke test passes
+npx tsc --noEmit      # No type errors
+```
+
+### Adding New Unit Tests
+
+1. Create `tests/feature.test.ts`
+2. Import from `vitest`:
+   ```typescript
+   import { describe, it, expect } from 'vitest';
+   ```
+3. Run with `npm run test:watch`
+
+### Adding New E2E Tests
+
+1. Create `tests/e2e/feature.spec.cjs` (must use `.cjs` extension)
+2. Use CommonJS requires:
+   ```javascript
+   const { test, expect } = require('@playwright/test');
+   const { captureConsole } = require('./helpers.cjs');
+   ```
+3. Run with `npm run test:e2e`
+
+## CI Integration (Future)
+
+For GitHub Actions or similar:
+
+```yaml
+- run: npm ci
+- run: npm run test
+- run: npx tsc --noEmit
+# E2E requires display, use xvfb-run on Linux:
+- run: xvfb-run npm run test:e2e
+```
+
+Note: E2E tests require a display for WebGPU. Use `xvfb-run` or similar virtual framebuffer.
