@@ -6,7 +6,7 @@
 const { devices } = require('@playwright/test');
 
 module.exports = {
-  testDir: './tests/e2e',
+  testDir: '.',
   timeout: 30000,
   expect: {
     timeout: 5000,

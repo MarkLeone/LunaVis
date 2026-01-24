@@ -8,8 +8,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:smoke": "playwright test --config=playwright.config.cjs tests/e2e/smoke.spec.cjs",
-    "test:e2e": "playwright test --config=playwright.config.cjs"
+    "test:smoke": "playwright test --config=tests/e2e/playwright.config.cjs tests/e2e/smoke.spec.cjs",
+    "test:e2e": "playwright test --config=tests/e2e/playwright.config.cjs"
   },
   "dependencies": {
     "@tweakpane/core": "^2.0.5",

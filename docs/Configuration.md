@@ -136,15 +136,15 @@ import shaderCode from '@/shaders/blinn-phong.wgsl?raw';
 
 ## Playwright Configuration
 
-### playwright.config.cjs
+### tests/e2e/playwright.config.cjs
 
-E2E testing with Firefox and WebGPU. Uses `.cjs` extension for Node 19 compatibility.
+E2E testing with Firefox and WebGPU. Located in `tests/e2e/` to reduce root clutter. Uses `.cjs` extension for Node 19 compatibility.
 
 ```javascript
 const { devices } = require('@playwright/test');
 
 module.exports = {
-  testDir: './tests/e2e',
+  testDir: '.',  // Relative to config file location
   timeout: 30000,
   workers: 1,
   projects: [{
@@ -163,7 +163,7 @@ module.exports = {
   webServer: {
     command: 'npm run dev',
     url: 'http://localhost:3000',
-    reuseExistingServer: true,
+    reuseExistingServer: !process.env.CI,
   },
 };
 ```
@@ -177,9 +177,10 @@ module.exports = {
 **Test File Structure:**
 ```
 tests/e2e/
-├── smoke.spec.cjs   # Quick smoke test (~5s)
-├── helpers.cjs      # Console capture utilities
-└── *.spec.cjs       # Additional E2E tests
+├── playwright.config.cjs  # Playwright configuration
+├── smoke.spec.cjs         # Quick smoke test (~5s)
+├── helpers.cjs            # Console capture utilities
+└── *.spec.cjs             # Additional E2E tests
 ```
 
 ---
