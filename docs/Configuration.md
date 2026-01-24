@@ -217,7 +217,7 @@ LunaVis/
 │       └── helpers.cjs
 ├── docs/               # Documentation
 │   ├── Plan.md
-│   ├── ImplementationPlan.md
+│   ├── BuildAndTest.md
 │   ├── Configuration.md
 │   └── DevLog.md
 ├── public/

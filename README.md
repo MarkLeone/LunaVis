@@ -69,10 +69,10 @@ See [docs/BuildAndTest.md](docs/BuildAndTest.md) for detailed procedures.
 ## Documentation
 
 See `docs/` for detailed documentation:
-- `Plan.md` — Original design document
-- `ImplementationPlan.md` — Refined scope and milestones
+- `Plan.md` — Design document (original + implementation plan)
 - `BuildAndTest.md` — Build, test, and development procedures
 - `Configuration.md` — Project setup reference
+- `DevLog.md` — Development log and decisions
 - `DevLog.md` — Development log and decisions
 
 ## Design Goals
