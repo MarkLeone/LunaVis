@@ -198,43 +198,6 @@ tests/e2e/
 
 ---
 
-## Project Structure
-
-```
-LunaVis/
-├── src/
-│   ├── core/           # Viewer, Scene, Camera
-│   ├── objects/        # Object3D, Mesh, DirectionalLight
-│   ├── geometry/       # Geometry, primitives
-│   ├── materials/      # SolidMaterial (Blinn-Phong)
-│   ├── loaders/        # glTF loader (M5)
-│   ├── controls/       # OrbitControls, FlyControls (M6)
-│   ├── shaders/        # blinn-phong.wgsl, solid.wgsl
-│   ├── types/          # TypeScript type definitions
-│   └── main.ts         # Entry point + Tweakpane UI
-├── tests/
-│   ├── *.test.ts       # Unit tests (Vitest)
-│   └── e2e/            # E2E tests (Playwright)
-│       ├── smoke.spec.cjs
-│       └── helpers.cjs
-├── docs/               # Documentation
-│   ├── Plan.md
-│   ├── BuildAndTest.md
-│   ├── Configuration.md
-│   └── DevLog.md
-├── public/
-│   └── assets/         # Static assets, .glb models
-├── index.html          # HTML entry point
-├── package.json
-├── tsconfig.json
-├── vite.config.ts
-├── vitest.config.ts
-├── playwright.config.cjs
-└── .gitignore
-```
-
----
-
 ## HTML Entry Point
 
 ### index.html
