@@ -24,7 +24,8 @@ Project configuration for the WebGPU 3D viewer.
 |---------|---------|---------|
 | `typescript` | ^5.7.3 | Language |
 | `vite` | ^6.0.7 | Build tool, dev server, HMR |
-| `vitest` | ^3.0.4 | Test framework |
+| `vitest` | ^3.0.4 | Unit test framework |
+| `@playwright/test` | ^1.58.0 | E2E testing with Firefox |
 | `@webgpu/types` | ^0.1.54 | WebGPU TypeScript definitions |
 
 **Scripts:**
@@ -32,8 +33,10 @@ Project configuration for the WebGPU 3D viewer.
 npm run dev        # Start Vite dev server (port 3000)
 npm run build      # Type-check + production build
 npm run preview    # Preview production build
-npm run test       # Run tests once
-npm run test:watch # Run tests in watch mode
+npm run test       # Run unit tests once (Vitest)
+npm run test:watch # Run unit tests in watch mode
+npm run test:smoke # Quick E2E smoke test (~5s)
+npm run test:e2e   # Full E2E test suite
 ```
 
 ---
@@ -150,6 +153,56 @@ export default defineConfig({
 
 ---
 
+## Playwright Configuration
+
+### playwright.config.cjs
+
+E2E testing with Firefox and WebGPU. Uses `.cjs` extension for Node 19 compatibility.
+
+```javascript
+const { devices } = require('@playwright/test');
+
+module.exports = {
+  testDir: './tests/e2e',
+  timeout: 30000,
+  workers: 1,
+  projects: [{
+    name: 'firefox-webgpu',
+    use: {
+      ...devices['Desktop Firefox'],
+      headless: false,  // WebGPU requires headed mode
+      launchOptions: {
+        firefoxUserPrefs: {
+          'dom.webgpu.enabled': true,
+          'gfx.webgpu.ignore-blocklist': true,
+        },
+      },
+    },
+  }],
+  webServer: {
+    command: 'npm run dev',
+    url: 'http://localhost:3000',
+    reuseExistingServer: true,
+  },
+};
+```
+
+**Key Settings:**
+- **Firefox only** — WebGPU support with `dom.webgpu.enabled` pref
+- **Headed mode** — WebGPU requires a display (no headless)
+- **Auto-start dev server** — `webServer` config starts Vite automatically
+- **CommonJS** — `.cjs` extension avoids Node 19 ESM issues
+
+**Test File Structure:**
+```
+tests/e2e/
+├── smoke.spec.cjs   # Quick smoke test (~5s)
+├── helpers.cjs      # Console capture utilities
+└── *.spec.cjs       # Additional E2E tests
+```
+
+---
+
 ## Project Structure
 
 ```
@@ -164,15 +217,24 @@ LunaVis/
 │   ├── shaders/        # *.wgsl files
 │   ├── types/          # TypeScript type definitions
 │   └── main.ts         # Entry point
-├── tests/              # Test files (*.test.ts)
+├── tests/
+│   ├── *.test.ts       # Unit tests (Vitest)
+│   └── e2e/            # E2E tests (Playwright)
+│       ├── smoke.spec.cjs
+│       └── helpers.cjs
+├── docs/               # Documentation
+│   ├── Plan.md
+│   ├── ImplementationPlan.md
+│   ├── Configuration.md
+│   └── DevLog.md
 ├── public/
 │   └── assets/         # Static assets, .glb models
-├── docs/               # Documentation
 ├── index.html          # HTML entry point
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts
 ├── vitest.config.ts
+├── playwright.config.cjs
 └── .gitignore
 ```
 

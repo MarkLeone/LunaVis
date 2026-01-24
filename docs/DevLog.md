@@ -64,6 +64,32 @@ tests/
 
 ---
 
+### Testing Infrastructure ✓
+
+**Goal:** Automated smoke and E2E tests with Firefox + WebGPU.
+
+**Completed:**
+- Playwright installed with Firefox browser
+- Console marker system for test verification:
+  - Human-readable: `[LunaVis] Ready`
+  - Machine-parseable: `{"event":"ready","version":"0.1.0"}`
+- Smoke test (~5s): verifies init, no errors, canvas rendered
+- E2E helpers: `captureConsole()`, `waitForEvent()`, `hasMarker()`
+
+**Node 19 Compatibility:**
+- Playwright requires Node 18.19+ for ESM modules
+- Workaround: Use `.cjs` extension for all Playwright files
+- Config, helpers, and specs all use CommonJS
+
+**Commands:**
+```bash
+npm run test        # Unit tests (Vitest)
+npm run test:smoke  # Smoke test (~5s)
+npm run test:e2e    # Full E2E suite
+```
+
+---
+
 ## Upcoming
 
 ### M2: Triangle Rendering (Next)

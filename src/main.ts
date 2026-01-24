@@ -5,6 +5,20 @@
 
 import { Viewer } from '@/core/Viewer';
 
+/** Package version for logging */
+const VERSION = '0.1.0';
+
+/**
+ * Emit a structured event for test verification.
+ * Logs both human-readable marker and JSON for machine parsing.
+ */
+function emitEvent(event: string, data: Record<string, unknown> = {}): void {
+  // Human-readable marker
+  console.info(`[LunaVis] ${event.charAt(0).toUpperCase() + event.slice(1)}`);
+  // Machine-parseable JSON
+  console.info(JSON.stringify({ event, version: VERSION, ...data }));
+}
+
 /**
  * Display error message to user when WebGPU fails.
  */
@@ -14,7 +28,7 @@ function showError(message: string): void {
     container.textContent = message;
     container.style.display = 'block';
   }
-  console.error('LunaVis Error:', message);
+  console.error('[LunaVis] Error:', message);
 }
 
 /**
@@ -44,7 +58,7 @@ async function main(): Promise<void> {
     // Expose viewer to console for debugging
     (window as unknown as { viewer: Viewer }).viewer = viewer;
 
-    console.log('LunaVis initialized successfully');
+    emitEvent('ready');
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     showError(`Failed to initialize WebGPU:\n${message}`);

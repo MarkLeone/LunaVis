@@ -247,15 +247,122 @@ All uniforms follow WGSL alignment rules (16-byte for vec3/vec4/mat4):
 - PBR materials
 - Instanced rendering
 
+## Testing Strategy
+
+### Overview
+
+| Test Type | Framework | Target Time | Purpose |
+|-----------|-----------|-------------|---------|
+| Unit | Vitest | < 1s | Pure functions, type helpers, geometry math |
+| Smoke | Playwright | < 10s | Quick "did I break it?" check |
+| E2E | Playwright | < 30s | Thorough verification after features |
+
+### Unit Tests (Vitest)
+
+**Scope:**
+- Pure functions: geometry generation, vector math, type utilities
+- Viewer class with mocked WebGPU (verify method calls, not rendering)
+- No GPU required — runs in Node
+
+**Location:** `tests/*.test.ts`
+
+**Run:** `npm run test` or `npm run test:watch`
+
+### Smoke Test (Playwright + Firefox)
+
+**Purpose:** Quick iteration feedback during development.
+
+**What it verifies:**
+1. Firefox launches with WebGPU enabled
+2. Page loads without JS errors
+3. `[LunaVis] Ready` marker appears in console
+4. Canvas has non-zero dimensions
+
+**Browser:** Firefox (headed mode, WebGPU requires display)
+
+**Location:** `tests/e2e/smoke.spec.ts`
+
+**Run:** `npm run test:smoke`
+
+### E2E Test (Playwright + Firefox)
+
+**Purpose:** Thorough verification after completing a milestone.
+
+**What it verifies:**
+1. All smoke test checks
+2. Milestone-specific console markers (e.g., `[LunaVis] Mesh created`)
+3. Window resize triggers re-render
+4. No WebGPU device lost errors
+5. (Future) Interaction tests, visual regression
+
+**Location:** `tests/e2e/*.spec.ts`
+
+**Run:** `npm run test:e2e`
+
+### Console Marker System
+
+Structured logging for test verification:
+
+```typescript
+// Human-readable
+console.info('[LunaVis] Ready');
+
+// Machine-parseable (for test assertions)
+console.info(JSON.stringify({
+  event: 'ready',
+  version: '0.1.0',
+  adapter: 'NVIDIA RTX 3500'
+}));
+```
+
+**Standard Events:**
+| Event | Milestone | Description |
+|-------|-----------|-------------|
+| `ready` | M1 | Viewer initialized, first frame rendered |
+| `mesh-created` | M2 | Mesh added to scene |
+| `shader-compiled` | M2 | Render pipeline created |
+| `frame-rendered` | M2+ | Render pass completed |
+| `resize` | M3 | Canvas resized |
+
+### Test Infrastructure
+
+**Playwright Configuration:**
+- Firefox with `dom.webgpu.enabled: true`
+- Headed mode (WebGPU needs display)
+- Dev server auto-start via `webServer` config
+- Console capture and assertion helpers
+
+**File Structure:**
+```
+tests/
+├── e2e/
+│   ├── smoke.spec.ts      # Quick smoke test
+│   ├── m2-triangle.spec.ts # M2 verification
+│   └── helpers.ts         # Console capture utilities
+├── viewer.test.ts         # Unit tests
+└── geometry.test.ts       # Geometry unit tests
+```
+
+### Visual Regression (Deferred)
+
+Screenshot comparison for detecting rendering changes. Will add after M4 when visuals stabilize:
+- Baseline screenshots per milestone
+- Pixel diff threshold for minor variations
+- Manual approval workflow for intentional changes
+
 ## Commands
 
 ```bash
 # Development
 npm run dev          # Start Vite dev server
 
-# Testing
-npm run test         # Run Vitest
+# Unit Testing
+npm run test         # Run Vitest unit tests
 npm run test:watch   # Watch mode
+
+# E2E Testing
+npm run test:smoke   # Quick smoke test (< 10s)
+npm run test:e2e     # Full E2E suite (< 30s)
 
 # Build
 npm run build        # Production build
