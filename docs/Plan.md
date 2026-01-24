@@ -596,7 +596,49 @@ From [NASA SVS CGI Moon Kit](https://svs.gsfc.nasa.gov/4720):
   - Higher res: 16, 64 pixels per degree
   - Values in km relative to 1737.4 km radius (float) or half-meters offset by +10km (uint16)
 
-For the initial milestone, use the 2k JPG color map. Displacement maps will require TIFF loading or pre-conversion to PNG.
+### Texture Formats
+
+#### Color Map: KTX2 (8-bit sRGB)
+
+The color/albedo map is converted to **KTX2 with pre-baked mipmaps and Zstd compression**.
+
+**Color space rationale**:
+- NASA source: 16-bit sRGB TIFF
+- Target: **8-bit sRGB** (`R8G8B8_SRGB` format)
+- 8-bit sRGB is correct for albedo textures because:
+  - sRGB encoding concentrates precision where human vision is sensitive (dark tones)
+  - 8-bit sRGB ≈ 12-bit perceptual precision in shadows
+  - GPU converts to linear automatically when sampling (hardware accelerated)
+  - 16-bit would waste memory/bandwidth with no perceptual benefit
+
+**Build-time conversion** (automated via `npm run build`):
+
+```bash
+# Requires: ImageMagick + KTX-Software
+# Ubuntu/Debian: sudo apt install imagemagick ktx-tools
+# macOS: brew install imagemagick ktx-software
+
+npm run download-assets
+npm run convert-textures
+```
+
+The conversion script (`scripts/convert-lunar-textures.sh`) performs:
+1. TIFF → PNG (via ImageMagick, 16-bit to 8-bit with sRGB preservation)
+2. PNG → KTX2 (via `ktx create --format R8G8B8_SRGB --generate-mipmap --zstd 19`)
+
+Output: `assets/lunar/moon_color.ktx2`
+
+#### Displacement Map: TIFF (16-bit, direct processing)
+
+The displacement map (`ldem_16.tif`) is **not converted to KTX2**. Instead, it will be:
+- Read directly as TIFF (16-bit precision preserved)
+- Uploaded to GPU as a storage texture or buffer
+- Processed by compute shader to generate displaced mesh vertices
+
+This approach is better for M8 (GPU displacement) because:
+- Full 16-bit precision is essential for terrain height data
+- Compute shader needs random access, not filtered sampling
+- Mipmaps aren't useful for vertex generation (LOD handled differently)
 
 ---
 
@@ -605,6 +647,15 @@ For the initial milestone, use the 2k JPG color map. Displacement maps will requ
 **Goal**: Render the Moon as a sphere with the NASA color texture applied.
 
 **Note**: The NASA color map provides Hapke-normalized albedo (surface reflectance with photometric effects removed), not pre-lit color. This makes it suitable as the diffuse term in Blinn-Phong lighting — we apply our own illumination based on light direction and view angle.
+
+### Approach
+
+Rather than creating a procedural sphere primitive, we extend the existing `@loaders.gl/gltf` pipeline to support textured models. The loader already parses `TEXCOORD_0` attributes and can load images — we're just not using those features yet.
+
+This approach is cleaner because:
+- UV mapping at poles is already solved by modeling software (Blender, etc.)
+- The same pipeline works for any textured glTF model
+- Less custom code to maintain
 
 ### Required Changes
 
@@ -621,59 +672,99 @@ export interface GeometryData {
 }
 ```
 
-Add `uvBuffer` to `GeometryBuffers` and handle in `createBuffers()`.
+Add optional `uvBuffer` to `GeometryBuffers` and handle in `createBuffers()`.
 
-#### 2. Create Sphere Primitive
+#### 2. Extend GLTFLoader for UVs and Images
 
-Add to [`src/geometry/primitives.ts`](src/geometry/primitives.ts):
+Modify [`src/loaders/GLTFLoader.ts`](src/loaders/GLTFLoader.ts):
+
+- Enable `loadImages: true` in loader options
+- Extract `TEXCOORD_0` attribute when present
+- Pass UVs to Geometry constructor
+- Expose loaded images for texture creation
 
 ```typescript
-export function createUVSphere(
-  radius: number,
-  latSegments: number,  // "stacks" (poles to equator)
-  lonSegments: number   // "slices" (around equator)
-): Geometry
-```
+// Current (images disabled):
+const gltfWithBuffers = await load(url, LoadersGLTFLoader, {
+  gltf: { loadBuffers: true, loadImages: false },
+});
 
-- Generate vertices with equirectangular UV mapping (matches NASA data)
-- UV.x = longitude / (2*PI), UV.y = latitude / PI
-- Handle pole singularity (duplicate vertices with different UVs)
+// New (images enabled):
+const gltfWithBuffers = await load(url, LoadersGLTFLoader, {
+  gltf: { loadBuffers: true, loadImages: true },
+});
+
+// In extractMesh():
+const uvAccessor = attributes['TEXCOORD_0'];
+if (uvAccessor?.value) {
+  uvs = new Float32Array(uvAccessor.value);
+}
+```
 
 #### 3. Create TexturedMaterial
 
 New file [`src/materials/TexturedMaterial.ts`](src/materials/TexturedMaterial.ts):
 
-- Accepts `GPUTexture` or image URL
+- Accepts `GPUTexture` (created from loaded image)
 - Bind group includes sampler + texture view
-- Group 1: `{ sampler, texture, optional: color tint, shininess }`
+- Group 1: `{ sampler, texture, shininess }`
+- Falls back to solid color if no texture
 
 #### 4. Create Textured Shader
 
 New file [`src/shaders/textured-blinn-phong.wgsl`](src/shaders/textured-blinn-phong.wgsl):
 
-- Vertex shader passes UV to fragment
-- Fragment shader samples texture for base color
-- Combine with existing Blinn-Phong lighting
+- Vertex shader passes UV (`@location(2)`) to fragment
+- Fragment shader samples texture for base color (albedo)
+- Combine with existing Blinn-Phong lighting calculations
 
-#### 5. Texture Loading Utility
+#### 5. KTX2 Texture Loading
 
-New file [`src/loaders/TextureLoader.ts`](src/loaders/TextureLoader.ts):
+New file [`src/loaders/KTX2Loader.ts`](src/loaders/KTX2Loader.ts):
 
-- Load image from URL, create `GPUTexture`
-- Handle mipmap generation (important for spheres viewed at varying distances)
-- Support `createImageBitmap()` for efficient loading
+- Load KTX2 files with pre-baked mipmaps using `@loaders.gl/textures`
+- Create `GPUTexture` with correct mip level count from KTX2 metadata
+- Upload all mip levels directly (no runtime generation)
+- Configure sampler with trilinear filtering (`mipmapFilter: 'linear'`)
+
+```typescript
+import { load } from '@loaders.gl/core';
+import { KTX2BasisLoader } from '@loaders.gl/textures';
+
+async function loadKTX2Texture(device: GPUDevice, url: string): Promise<GPUTexture> {
+  const ktxData = await load(url, KTX2BasisLoader);
+  // ktxData contains mip levels ready for GPU upload
+  const texture = device.createTexture({
+    size: [ktxData.width, ktxData.height],
+    mipLevelCount: ktxData.mipLevels,  // from KTX2 metadata
+    format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  // Upload each mip level...
+  return texture;
+}
+```
+
+#### 6. UV-Mapped Sphere Model
+
+Add a glTF sphere model with proper equirectangular UV mapping:
+- Export from Blender with UV sphere + proper unwrap
+- Or find a suitable CC0/public domain model online
+- UVs should map correctly to equirectangular projection (longitude/latitude)
 
 ### Files to Create/Modify
 
 | File | Action |
 |------|--------|
-| `src/geometry/Geometry.ts` | Add UV support |
-| `src/geometry/primitives.ts` | Add `createUVSphere()` |
+| `src/geometry/Geometry.ts` | Add optional UV support |
+| `src/loaders/GLTFLoader.ts` | Extract `TEXCOORD_0`, enable `loadImages` |
 | `src/materials/TexturedMaterial.ts` | New file |
 | `src/shaders/textured-blinn-phong.wgsl` | New file |
-| `src/loaders/TextureLoader.ts` | New file |
+| `src/loaders/KTX2Loader.ts` | New file — load KTX2 with pre-baked mipmaps |
 | `src/main.ts` | Add Moon demo option |
-| `assets/textures/` | Add NASA color map |
+| `assets/models/` | Add UV-mapped sphere glTF |
+| `assets/textures/` | Add `moon_color.ktx2` (converted from NASA source) |
+| `package.json` | Add `@loaders.gl/textures` dependency |
 
 ---
 
@@ -857,16 +948,31 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
 ## Appendix: Insights and Recommendations
 
-### Texture Format Considerations
+### Texture Format Decisions
 
-| Format | Pros | Cons |
-|--------|------|------|
-| JPG | Small, web-native | 8-bit, lossy, no alpha |
-| PNG | Lossless, web-native | Large for 16k, 8-bit |
-| TIFF | NASA's native format, 16-bit | Not web-native, need library |
-| EXR | HDR, float16 | Not web-native, need library |
+#### Color/Albedo Map
 
-**Recommendation**: Convert NASA TIFFs to PNG or KTX2 (GPU-compressed) for web use. Use JPG for initial development.
+| Aspect | Decision | Rationale |
+|--------|----------|-----------|
+| Bit depth | 8-bit | sRGB encoding provides 12-bit perceptual precision |
+| Color space | sRGB | GPU linearizes on sample (hardware accelerated) |
+| Container | KTX2 | Pre-baked mipmaps, Zstd compression |
+| Compression | Zstd (lossless) | Preserves albedo values exactly |
+
+```bash
+ktx create --format R8G8B8_SRGB --generate-mipmap --zstd 19 output.ktx2 input.png
+```
+
+#### Displacement Map
+
+| Aspect | Decision | Rationale |
+|--------|----------|-----------|
+| Bit depth | 16-bit | Terrain precision requires full dynamic range |
+| Format | TIFF (source) | Read directly, no conversion loss |
+| Processing | Compute shader | Direct GPU vertex generation |
+| Mipmaps | None | LOD handled by tessellation, not texture filtering |
+
+The displacement map is processed differently than a typical texture — it's data for mesh generation, not a render texture.
 
 ### Coordinate System Alignment
 

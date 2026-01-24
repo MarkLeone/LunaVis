@@ -9,6 +9,26 @@ Practical guide for building, testing, and developing LunaVis.
 | Node.js | 18.x, 19.x, 20.x, or 22+ | v19 works with warnings |
 | npm | 9.x+ | Included with Node |
 | Firefox | Recent | WebGPU must be enabled |
+| ImageMagick | Any recent | For texture conversion (TIFF→PNG) |
+| KTX-Software | 4.x | For texture conversion (PNG→KTX2) |
+
+### Installing Texture Conversion Tools
+
+```bash
+# Ubuntu/Debian
+sudo apt install imagemagick
+
+# KTX-Software (download from GitHub)
+curl -fsSL -o /tmp/ktx.tar.bz2 \
+  "https://github.com/KhronosGroup/KTX-Software/releases/download/v4.4.2/KTX-Software-4.4.2-Linux-x86_64.tar.bz2"
+tar -xjf /tmp/ktx.tar.bz2 -C /tmp
+export PATH="/tmp/KTX-Software-4.4.2-Linux-x86_64/bin:$PATH"
+
+# macOS
+brew install imagemagick ktx-software
+```
+
+> **Note:** These tools are only needed for converting NASA source textures to KTX2. If `.ktx2` files already exist, conversion is skipped.
 
 ### Enable WebGPU in Firefox
 
@@ -26,9 +46,13 @@ Practical guide for building, testing, and developing LunaVis.
 cd LunaVis
 npm install
 npm run download-assets
+npm run convert-textures
 ```
 
-The `download-assets` script fetches large binary assets (textures, elevation maps) from their canonical sources. These files are not committed to git to keep the repository lightweight.
+- `download-assets` — fetches large binary assets (textures, elevation maps) from their canonical sources
+- `convert-textures` — converts downloaded TIFFs to GPU-ready KTX2 format with mipmaps
+
+These files are not committed to git to keep the repository lightweight.
 
 Expected output includes engine warnings for Node 19 — these are non-fatal.
 
@@ -138,8 +162,9 @@ npm run build
 
 **Steps:**
 1. Download external assets (`npm run download-assets`)
-2. TypeScript type-checking (`tsc`)
-3. Vite production build (minified, tree-shaken)
+2. Convert textures to KTX2 (`npm run convert-textures`)
+3. TypeScript type-checking (`tsc`)
+4. Vite production build (minified, tree-shaken)
 
 **Output:** `dist/`
 
@@ -153,6 +178,26 @@ Discovers and runs all `download.sh` scripts in the `assets/` directory. Each as
 
 **Current assets:**
 - `assets/lunar/` — NASA CGI Moon Kit (color map + displacement map, ~120 MB)
+
+### Convert Textures Only
+
+```bash
+npm run convert-textures
+```
+
+Converts downloaded source textures to GPU-optimized KTX2 format:
+- `lroc_color_16bit_srgb_4k.tif` → `moon_color.ktx2` (8-bit sRGB, 13 mipmaps, Zstd)
+
+The conversion is idempotent — if `.ktx2` files already exist, they are skipped.
+
+**Verification:**
+```bash
+# Inspect the converted texture
+ktx info assets/lunar/moon_color.ktx2
+
+# Extract to PNG for visual inspection
+ktx extract assets/lunar/moon_color.ktx2 /tmp/moon.png
+```
 
 ### Preview Production Build
 
@@ -171,6 +216,19 @@ npx tsc --noEmit
 Runs TypeScript compiler without emitting files — useful for CI or pre-commit checks.
 
 ## Common Issues
+
+### KTX Tools Not Found
+
+Error: `Neither 'ktx' nor 'toktx' is installed`
+
+**Solution:** Install KTX-Software (see Prerequisites) or download from GitHub:
+```bash
+curl -fsSL -o /tmp/ktx.tar.bz2 \
+  "https://github.com/KhronosGroup/KTX-Software/releases/download/v4.4.2/KTX-Software-4.4.2-Linux-x86_64.tar.bz2"
+tar -xjf /tmp/ktx.tar.bz2 -C /tmp
+export PATH="/tmp/KTX-Software-4.4.2-Linux-x86_64/bin:$PATH"
+npm run convert-textures
+```
 
 ### Port Already in Use
 

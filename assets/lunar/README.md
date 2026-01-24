@@ -21,7 +21,7 @@ The displacement map (also known as a height map or elevation map) was taken dir
 
 The reference surface for all LRO data is a sphere of radius 1737.4 km. LOLA's gridded elevation data is published as signed 16-bit integers in units of half-meters relative to this radius. For the floating-point TIFFs, the source data was divided by 2000. For the unsigned 16-bit TIFFs, the source data was offset by +20,000 (10 km) so that all of the values are positive. This latter format is provided for software that doesn't work well with either floating-point or signed integer files.
 
-## Download
+## Download & Conversion
 
 Run the download script to fetch the assets:
 
@@ -34,6 +34,21 @@ Or use the project-wide asset download:
 ```bash
 npm run download-assets
 ```
+
+After downloading, convert the color map to KTX2 for WebGPU:
+
+```bash
+npm run convert-textures
+```
+
+This produces:
+- `moon_color.ktx2` — color/albedo map (8-bit sRGB with mipmaps, Zstd compressed)
+
+The displacement map (`ldem_16.tif`) is kept as TIFF and processed directly by compute shaders for mesh generation (16-bit precision preserved).
+
+**Requirements:** ImageMagick and KTX-Software (`sudo apt install imagemagick ktx-tools`)
+
+The full build (`npm run build`) runs both download and conversion automatically.
 
 ## Attribution
 

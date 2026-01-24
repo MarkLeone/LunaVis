@@ -33,7 +33,7 @@ Project configuration for the WebGPU 3D viewer.
 | `@playwright/test` | ^1.58.0 | E2E testing with Firefox |
 | `@webgpu/types` | ^0.1.54 | WebGPU TypeScript definitions |
 
-**Scripts:** `dev`, `build`, `preview`, `download-assets`, `test`, `test:watch`, `test:smoke`, `test:e2e`
+**Scripts:** `dev`, `build`, `preview`, `download-assets`, `convert-textures`, `test`, `test:watch`, `test:smoke`, `test:e2e`
 
 See [BuildAndTest.md](BuildAndTest.md) for usage details.
 
@@ -244,11 +244,14 @@ assets/**/*.jpeg
 assets/**/*.png
 assets/**/*.gltf
 assets/**/*.glb
+assets/**/*.tmp
+# Generated textures (converted at build time)
+assets/**/*.ktx2
 # Keep committed models explicitly tracked
 !assets/models/*.glb
 ```
 
-Large binary assets are downloaded at build time rather than committed. Each asset folder (e.g., `assets/lunar/`) contains a `download.sh` script and `README.md` with attribution.
+Large binary assets are downloaded at build time rather than committed. Generated textures (`.ktx2`) are converted from downloaded assets by `npm run convert-textures`. Each asset folder (e.g., `assets/lunar/`) contains a `download.sh` script and `README.md` with attribution.
 
 ---
 
@@ -259,6 +262,31 @@ Large binary assets are downloaded at build time rather than committed. Each ass
 | Node.js | 18.x, 20.x, or 22+ | v19 works with warnings |
 | Browser | Chrome 113+ / Edge 113+ | WebGPU required |
 | npm | 9.x+ | Included with Node |
+
+### Build-Time Tools (for texture conversion)
+
+| Tool | Purpose | Installation |
+|------|---------|--------------|
+| ImageMagick | TIFF to PNG conversion | `sudo apt install imagemagick` |
+| KTX-Software | PNG to KTX2 with mipmaps | See below |
+
+**Installing KTX-Software:**
+
+```bash
+# Ubuntu/Debian (if available in repos)
+sudo apt install ktx-tools
+
+# Or download from GitHub releases
+curl -fsSL -o /tmp/ktx.tar.bz2 \
+  "https://github.com/KhronosGroup/KTX-Software/releases/download/v4.4.2/KTX-Software-4.4.2-Linux-x86_64.tar.bz2"
+tar -xjf /tmp/ktx.tar.bz2 -C /tmp
+export PATH="/tmp/KTX-Software-4.4.2-Linux-x86_64/bin:$PATH"
+
+# macOS
+brew install imagemagick ktx-software
+```
+
+These tools are only needed for the `convert-textures` step (converting NASA TIFFs to KTX2). If you already have the `.ktx2` files, these tools are not required.
 
 **WebGPU Browser Support:**
 - Chrome/Edge: Stable (enabled by default)

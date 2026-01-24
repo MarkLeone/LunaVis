@@ -18,5 +18,7 @@ assets/**/*.png
 assets/**/*.gltf
 assets/**/*.glb
 assets/**/*.tmp
+# Generated textures (converted at build time)
+assets/**/*.ktx2
 # Keep committed models explicitly tracked
 !assets/models/*.glb
