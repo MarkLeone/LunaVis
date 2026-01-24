@@ -187,13 +187,64 @@ src/
 
 ---
 
+### M4: Blinn-Phong Lighting ✓
+
+**Goal:** Lit cube with directional light, ambient + diffuse + specular.
+
+**Completed:**
+- `DirectionalLight` class with:
+  - Direction (normalized), color, intensity
+  - `effectiveColor` getter (color × intensity)
+  - `needsUpdate` flag for uniform sync
+- `blinn-phong.wgsl` shader with:
+  - Ambient component (ambient color × material color)
+  - Diffuse component (Lambertian: NdotL)
+  - Specular component (Blinn-Phong: NdotH^shininess)
+  - World-space lighting calculations
+- Expanded global uniforms (128 bytes):
+  - viewProjection matrix (64 bytes)
+  - cameraPosition (16 bytes, for specular)
+  - lightDirection (16 bytes)
+  - lightColor (16 bytes)
+  - ambientColor (16 bytes)
+- Updated `SolidMaterial` with:
+  - Shininess parameter (default: 32)
+  - 32-byte uniform buffer (color + shininess)
+- Tweakpane debug UI:
+  - Light: direction (X/Y/Z sliders), color picker, intensity
+  - Ambient: color picker
+  - Material: color picker, shininess slider
+
+**Files Created/Updated:**
+```
+src/
+├── objects/DirectionalLight.ts  # New: light class
+├── shaders/blinn-phong.wgsl     # New: Blinn-Phong shader
+├── core/Viewer.ts               # Updated: light + 128-byte uniforms
+├── materials/SolidMaterial.ts   # Updated: shininess, new shader
+└── main.ts                      # Updated: light + tweakpane UI
+```
+
+**Dependencies Added:**
+- `tweakpane@4` — lightweight debug UI
+- `@tweakpane/core` — type definitions
+
+**Technical Notes:**
+- Light direction in shader is negated (points toward light source for NdotL)
+- Specular uses halfway vector H = normalize(L + V) for Blinn-Phong
+- Global bind group visible to both VERTEX and FRAGMENT stages
+
+**Verification:** Cube displays realistic shading. Light/material params adjustable via UI. E2E test passes.
+
+---
+
 ## Upcoming
 
-### M4: Blinn-Phong Lighting (Next)
-- `DirectionalLight` class with direction, color, intensity
-- `blinn-phong.wgsl` shader with ambient + diffuse + specular
-- Light uniforms in global bind group
-- Debug UI (tweakpane) for light parameters
+### M5: glTF Loading (Next)
+- `GLTFLoader` class to parse .glb files
+- Extract positions, normals, indices from accessors
+- Load test model (Suzanne, Duck, etc.)
+- stats.js integration for FPS display
 
 ---
 

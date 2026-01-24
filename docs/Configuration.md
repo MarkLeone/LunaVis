@@ -18,6 +18,8 @@ Project configuration for the WebGPU 3D viewer.
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `wgpu-matrix` | ^3.3.0 | WebGPU-optimized matrix math (column-major) |
+| `tweakpane` | ^4.0.5 | Debug UI for light/material parameters |
+| `@tweakpane/core` | ^2.0.5 | Tweakpane type definitions |
 
 **Dev Dependencies:**
 | Package | Version | Purpose |
@@ -201,15 +203,15 @@ tests/e2e/
 ```
 LunaVis/
 ├── src/
-│   ├── core/           # Viewer, Renderer, Scene, Camera
-│   ├── objects/        # Object3D, Mesh, Lights
+│   ├── core/           # Viewer, Scene, Camera
+│   ├── objects/        # Object3D, Mesh, DirectionalLight
 │   ├── geometry/       # Geometry, primitives
-│   ├── materials/      # Material classes
-│   ├── loaders/        # glTF loader
-│   ├── controls/       # OrbitControls, FlyControls
-│   ├── shaders/        # *.wgsl files
+│   ├── materials/      # SolidMaterial (Blinn-Phong)
+│   ├── loaders/        # glTF loader (M5)
+│   ├── controls/       # OrbitControls, FlyControls (M6)
+│   ├── shaders/        # blinn-phong.wgsl, solid.wgsl
 │   ├── types/          # TypeScript type definitions
-│   └── main.ts         # Entry point
+│   └── main.ts         # Entry point + Tweakpane UI
 ├── tests/
 │   ├── *.test.ts       # Unit tests (Vitest)
 │   └── e2e/            # E2E tests (Playwright)
@@ -303,5 +305,4 @@ When adding packages, update this document with:
 3. Any configuration required
 
 Example future additions:
-- `tweakpane` — Debug UI for light/camera parameters
-- `stats.js` — FPS monitoring overlay
+- `stats.js` — FPS monitoring overlay (planned for M5)

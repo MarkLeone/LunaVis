@@ -354,7 +354,7 @@ LunaVis/
 
 ---
 
-### M4: Blinn-Phong Lighting
+### M4: Blinn-Phong Lighting ✓
 **Goal:** Lit cube with directional light, ambient + diffuse + specular.
 
 **Deliverables:**
@@ -367,7 +367,9 @@ LunaVis/
 - Light uniform packing
 - Normal transformation
 
-**Files:** `objects/DirectionalLight.ts`, `shaders/blinn-phong.wgsl`, update `Renderer.ts`
+**Files:** `objects/DirectionalLight.ts`, `shaders/blinn-phong.wgsl`, update `Viewer.ts`
+
+**Status:** Complete (2026-01-24)
 
 ---
 
