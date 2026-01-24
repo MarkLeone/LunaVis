@@ -174,6 +174,9 @@ module.exports = {
 - **Auto-start dev server** — `webServer` config starts Vite automatically
 - **CommonJS** — `.cjs` extension avoids Node 19 ESM issues
 
+**Browser Installation:**
+Playwright downloads its own Firefox binary via `npx playwright install firefox`. This is cached and doesn't need reinstalling unless Playwright is upgraded. If tools report "Executable doesn't exist", it's likely a sandbox/cache isolation issue, not a real need to reinstall.
+
 **Test File Structure:**
 ```
 tests/e2e/
