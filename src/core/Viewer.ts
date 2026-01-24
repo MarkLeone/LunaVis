@@ -6,6 +6,7 @@
  */
 
 import type { GPUContext, ViewerOptions, Color, RenderState } from '@/types';
+import type { Mesh } from '@/objects/Mesh';
 
 /** Default clear color: Cornflower Blue (#6495ED) */
 const DEFAULT_CLEAR_COLOR: Color = [0.392, 0.584, 0.929, 1.0];
@@ -23,17 +24,16 @@ const DEFAULT_CLEAR_COLOR: Color = [0.392, 0.584, 0.929, 1.0];
 export class Viewer {
   private readonly canvas: HTMLCanvasElement;
   private readonly clearColor: Color;
-  private readonly powerPreference: GPUPowerPreference;
 
   private gpu: GPUContext | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private renderState: RenderState = { dirty: true, frameId: null };
   private disposed = false;
+  private meshes: Mesh[] = [];
 
   constructor(options: ViewerOptions) {
     this.canvas = options.canvas;
     this.clearColor = options.clearColor ?? DEFAULT_CLEAR_COLOR;
-    this.powerPreference = options.powerPreference ?? 'high-performance';
   }
 
   /**
@@ -141,6 +141,37 @@ export class Viewer {
   }
 
   /**
+   * Add a mesh to the scene.
+   * Creates GPU resources if not already created.
+   */
+  addMesh(mesh: Mesh): void {
+    if (!this.gpu) {
+      throw new Error('Viewer not initialized');
+    }
+    if (!mesh.isReady) {
+      mesh.createGPUResources(this.gpu.device, this.gpu.format);
+    }
+    this.meshes.push(mesh);
+    this.requestRender();
+  }
+
+  /**
+   * Remove a mesh from the scene.
+   */
+  removeMesh(mesh: Mesh): void {
+    const index = this.meshes.indexOf(mesh);
+    if (index !== -1) {
+      this.meshes.splice(index, 1);
+      this.requestRender();
+    }
+  }
+
+  /** Get all meshes in the scene */
+  getMeshes(): readonly Mesh[] {
+    return this.meshes;
+  }
+
+  /**
    * Setup ResizeObserver to handle canvas resize.
    * Updates canvas backing store and triggers re-render.
    */
@@ -189,9 +220,9 @@ export class Viewer {
       label: 'Main Command Encoder',
     });
 
-    // Begin render pass (clear only for M1)
+    // Begin render pass
     const renderPass = commandEncoder.beginRenderPass({
-      label: 'Clear Pass',
+      label: 'Main Render Pass',
       colorAttachments: [{
         view: textureView,
         clearValue: {
@@ -204,6 +235,11 @@ export class Viewer {
         storeOp: 'store',
       }],
     });
+
+    // Render all meshes
+    for (const mesh of this.meshes) {
+      mesh.render(renderPass, device);
+    }
 
     renderPass.end();
 

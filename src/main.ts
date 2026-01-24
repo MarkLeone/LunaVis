@@ -4,6 +4,9 @@
  */
 
 import { Viewer } from '@/core/Viewer';
+import { createTriangle } from '@/geometry/primitives';
+import { SolidMaterial } from '@/materials/SolidMaterial';
+import { Mesh } from '@/objects/Mesh';
 
 /** Package version for logging */
 const VERSION = '0.1.0';
@@ -54,6 +57,15 @@ async function main(): Promise<void> {
   try {
     const viewer = new Viewer({ canvas });
     await viewer.init();
+
+    // Create a red triangle
+    const geometry = createTriangle();
+    const material = new SolidMaterial({ color: [1.0, 0.2, 0.2, 1.0] }); // Red
+    const mesh = new Mesh(geometry, material);
+
+    // Add to scene
+    viewer.addMesh(mesh);
+    emitEvent('mesh-created', { id: mesh.id });
 
     // Expose viewer to console for debugging
     (window as unknown as { viewer: Viewer }).viewer = viewer;

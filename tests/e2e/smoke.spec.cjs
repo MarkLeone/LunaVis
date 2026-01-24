@@ -13,12 +13,18 @@ test.describe('Smoke Test', () => {
     // Navigate to the app
     await page.goto('/');
 
+    // Wait for mesh creation event (M2)
+    const meshEvent = await waitForEvent(page, capture, 'mesh-created', 5000);
+    expect(meshEvent.event).toBe('mesh-created');
+    expect(meshEvent.id).toMatch(/^mesh-/);
+
     // Wait for the ready event (structured)
     const readyEvent = await waitForEvent(page, capture, 'ready', 5000);
     expect(readyEvent.event).toBe('ready');
     expect(readyEvent.version).toBeDefined();
 
-    // Verify human-readable marker also present
+    // Verify human-readable markers also present
+    expect(hasMarker(capture, '[LunaVis] Mesh-created')).toBe(true);
     expect(hasMarker(capture, '[LunaVis] Ready')).toBe(true);
 
     // No console errors (ignore favicon 404)
