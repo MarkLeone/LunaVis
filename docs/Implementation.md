@@ -19,8 +19,10 @@ LunaVis/
 ├── tests/
 │   ├── *.test.ts       # Unit tests (Vitest)
 │   └── e2e/            # E2E tests (Playwright)
-├── docs/               # Documentation
-└── public/assets/      # Static assets, .glb models
+├── assets/             # Static assets served at root URL
+│   ├── models/         # glTF/GLB model files
+│   └── CREDITS.md      # Asset attribution
+└── docs/               # Documentation
 ```
 
 ## Class Relationships
@@ -40,6 +42,22 @@ Viewer
 2. `OrbitControls` updates `Camera` position/target
 3. Camera/control changes call `Viewer.requestRender()`
 4. `renderLoop()` writes uniforms and issues draw calls
+
+## Coordinate System
+
+See [Design.md](Design.md#coordinate-system) for rationale.
+
+**Quick reference:**
+- Right-handed, Y-up (matches glTF)
+- Camera default: `(0, 0, +dist)` looking at origin
+- Light direction points *toward* surfaces
+- WebGPU clip Z: [0, 1] (not [-1, 1])
+
+**OrbitControls:**
+- Spherical coordinates around target point
+- Polar angle (θ): 0 = top, π = bottom
+- Azimuth (φ): rotation around Y axis
+- `controls.reset(target)` — sync after programmatic camera changes
 
 ## Bind Group Layout
 

@@ -386,7 +386,7 @@ LunaVis/
 - Accessor unpacking
 - Buffer view slicing
 
-**Files:** `loaders/GLTFLoader.ts`, `public/assets/`
+**Files:** `loaders/GLTFLoader.ts`, `assets/models/`
 
 ---
 

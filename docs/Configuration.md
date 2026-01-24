@@ -20,6 +20,9 @@ Project configuration for the WebGPU 3D viewer.
 | `wgpu-matrix` | ^3.3.0 | WebGPU-optimized matrix math (column-major) |
 | `tweakpane` | ^4.0.5 | Debug UI for light/material parameters |
 | `@tweakpane/core` | ^2.0.5 | Tweakpane type definitions |
+| `@loaders.gl/core` | ^4.x | Asset loading framework |
+| `@loaders.gl/gltf` | ^4.x | glTF/GLB model parsing |
+| `stats.js` | ^0.17.0 | FPS counter overlay |
 
 **Dev Dependencies:**
 | Package | Version | Purpose |
@@ -120,6 +123,7 @@ export default defineConfig({
 - **Path alias:** `@/` maps to `src/` (must match tsconfig)
 - **WGSL imports:** Shaders can be imported as raw strings via `?raw` suffix
 - **Build target:** `esnext` for WebGPU compatibility (no transpilation)
+- **Public dir:** `assets/` folder served at root URL (e.g., `/models/Duck.glb`)
 
 **Vitest Settings:**
 - `globals: false` — Explicit imports (`import { describe, it } from 'vitest'`)
@@ -256,6 +260,3 @@ When adding packages, update this document with:
 1. Package name and version
 2. Purpose / why it was added
 3. Any configuration required
-
-Example future additions:
-- `stats.js` — FPS monitoring overlay (planned for M5)

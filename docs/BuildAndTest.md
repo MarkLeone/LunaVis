@@ -47,23 +47,26 @@ Opens Vite dev server at http://localhost:3000 (or next available port).
 ### Verify It Works
 
 1. Open Firefox at http://localhost:3000
-2. Canvas should display a lit red-orange cube with realistic shading
-3. Controls overlay shows in bottom-left corner
+2. Canvas should display the Utah Teapot with Blinn-Phong shading
+3. FPS counter shows in top-left corner
 4. Tweakpane debug UI appears in top-right corner
-5. Interact with the cube:
-   - Click + drag to orbit around the cube
+5. Interact with the model:
+   - Click + drag to orbit around the model
    - Scroll to zoom in/out
    - Right-click + drag to pan
-6. Adjust lighting via Tweakpane:
-   - Light: direction, color, intensity
-   - Ambient: color
-   - Material: color, shininess
+6. Use Tweakpane to:
+   - Select different models (Utah Teapot, Duck)
+   - Adjust light direction, color, intensity
+   - Adjust ambient color
+   - Adjust material color and shininess
 7. Console should show:
    ```
    [LunaVis] Mesh-created
    {"event":"mesh-created","version":"0.1.0","id":"mesh-..."}
    [LunaVis] Ready
    {"event":"ready","version":"0.1.0"}
+   [LunaVis] Model-loaded
+   {"event":"model-loaded","version":"0.1.0","name":"Utah Teapot",...}
    ```
 
 ## Testing

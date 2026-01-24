@@ -96,6 +96,27 @@ type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
 
 **Rationale:** Prevents mixing up IDs of different entity types. Result type makes error handling explicit without exceptions.
 
+## Coordinate System
+
+**Decision:** Right-handed, Y-up coordinates throughout.
+
+```
+       +Y (up)
+        │
+        │
+        └───────── +X (right)
+       /
+     +Z (toward viewer)
+```
+
+**Rationale:** Matches glTF specification exactly, so no coordinate conversion needed when loading models. This is the most common convention in 3D graphics (used by OpenGL, Blender export default, etc.).
+
+**Implications:**
+- Camera default position: `(0, 0, +dist)` looking at origin
+- Model "front" faces +Z (toward camera)
+- Light "from above": direction = `(0, -1, 0)` (points *toward* surfaces)
+- WebGPU clip space Z range is [0, 1] (not [-1, 1] like OpenGL), handled by `wgpu-matrix` projection
+
 ## Browser Support
 
 **Decision:** WebGPU required, no fallback.

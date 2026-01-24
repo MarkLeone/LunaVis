@@ -248,6 +248,26 @@ export class OrbitControls {
   }
 
   /**
+   * Reset orbit controls to match current camera position and a new target.
+   * Call this after programmatically moving the camera.
+   */
+  reset(newTarget?: Vec3 | [number, number, number]): void {
+    if (newTarget) {
+      vec3.copy(newTarget, this._target);
+    }
+
+    // Recalculate spherical coordinates from camera position
+    const offset = vec3.subtract(this.camera.position, this._target);
+    this._radius = vec3.length(offset);
+    if (this._radius < 0.001) this._radius = 5;
+
+    this._polar = Math.acos(Math.max(-1, Math.min(1, offset[1]! / this._radius)));
+    this._azimuth = Math.atan2(offset[0]!, offset[2]!);
+
+    // Don't call updateCamera - keep camera where it is
+  }
+
+  /**
    * Clean up event listeners.
    */
   dispose(): void {

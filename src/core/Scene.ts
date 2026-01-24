@@ -32,4 +32,15 @@ export class Scene extends Object3D {
     });
     return meshes;
   }
+
+  /**
+   * Remove all children from the scene and destroy their GPU resources.
+   */
+  clear(): void {
+    const meshes = this.getMeshes();
+    for (const mesh of meshes) {
+      this.remove(mesh);
+      mesh.destroy();
+    }
+  }
 }
