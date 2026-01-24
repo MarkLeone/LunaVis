@@ -8,6 +8,7 @@ A WebGPU 3D model viewer built from scratch in TypeScript. Features Blinn-Phong 
 
 ```bash
 npm install
+npm run download-assets  # Fetch lunar textures (~120 MB)
 npm run dev
 ```
 
@@ -62,6 +63,13 @@ src/
 ├── controls/   # OrbitControls
 ├── shaders/    # blinn-phong.wgsl
 └── types/      # TypeScript type definitions
+
+assets/
+├── models/     # Committed glTF/GLB files
+└── lunar/      # NASA Moon data (downloaded at build time)
+
+scripts/
+└── download-assets.sh  # Fetches external assets
 ```
 
 ## Testing

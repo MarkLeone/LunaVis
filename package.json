@@ -4,8 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "npm run download-assets && tsc && vite build",
     "preview": "vite preview",
+    "download-assets": "bash scripts/download-assets.sh",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:smoke": "playwright test --config=tests/e2e/playwright.config.cjs tests/e2e/smoke.spec.cjs",

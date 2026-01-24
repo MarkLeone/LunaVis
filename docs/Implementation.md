@@ -19,11 +19,28 @@ LunaVis/
 ├── tests/
 │   ├── *.test.ts       # Unit tests (Vitest)
 │   └── e2e/            # E2E tests (Playwright)
+├── scripts/
+│   └── download-assets.sh  # Discovers and runs asset download scripts
 ├── assets/             # Static assets served at root URL
-│   ├── models/         # glTF/GLB model files
-│   └── CREDITS.md      # Asset attribution
+│   ├── models/         # glTF/GLB model files (committed)
+│   ├── lunar/          # NASA Moon data (downloaded at build time)
+│   │   ├── download.sh
+│   │   └── README.md   # Attribution and data format docs
+│   └── CREDITS.md      # Asset attribution index
 └── docs/               # Documentation
 ```
+
+## Asset Management
+
+Large binary assets (textures, elevation maps) are not committed to git. Instead, each asset folder contains:
+
+- `download.sh` — Script to fetch files from canonical sources
+- `README.md` — Attribution, license, and data format documentation
+
+The build process runs `scripts/download-assets.sh`, which discovers and executes all `download.sh` scripts in `assets/`.
+
+**Gitignored asset types:** `.tif`, `.tiff`, `.exr`, `.jpg`, `.jpeg`, `.png`, `.gltf`, `.glb`  
+**Exception:** `assets/models/*.glb` is explicitly tracked for small committed models.
 
 ## Class Relationships
 

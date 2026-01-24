@@ -25,7 +25,10 @@ Practical guide for building, testing, and developing LunaVis.
 ```bash
 cd LunaVis
 npm install
+npm run download-assets
 ```
+
+The `download-assets` script fetches large binary assets (textures, elevation maps) from their canonical sources. These files are not committed to git to keep the repository lightweight.
 
 Expected output includes engine warnings for Node 19 — these are non-fatal.
 
@@ -134,10 +137,22 @@ npm run build
 ```
 
 **Steps:**
-1. TypeScript type-checking (`tsc`)
-2. Vite production build (minified, tree-shaken)
+1. Download external assets (`npm run download-assets`)
+2. TypeScript type-checking (`tsc`)
+3. Vite production build (minified, tree-shaken)
 
 **Output:** `dist/`
+
+### Download Assets Only
+
+```bash
+npm run download-assets
+```
+
+Discovers and runs all `download.sh` scripts in the `assets/` directory. Each asset folder (e.g., `assets/lunar/`) contains its own download script and README with attribution.
+
+**Current assets:**
+- `assets/lunar/` — NASA CGI Moon Kit (color map + displacement map, ~120 MB)
 
 ### Preview Production Build
 
@@ -207,6 +222,8 @@ npm run test          # Unit tests pass
 npm run test:smoke    # E2E smoke test passes
 npx tsc --noEmit      # No type errors
 ```
+
+> **Note:** Downloaded assets (`.tif`, `.exr`, `.jpg`, `.png` in `assets/`) are gitignored. Only the `download.sh` scripts and `README.md` files are committed.
 
 ### Adding New Unit Tests
 

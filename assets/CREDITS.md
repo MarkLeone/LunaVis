@@ -16,6 +16,10 @@ This file documents the sources and licenses for all third-party assets used in 
 - **License:** © University of Utah Graphics Lab
 - **Original Creator:** Martin Newell (1975); updated geometry by Cem Yüksel et al.
 
+## Lunar Data
+
+See [lunar/README.md](lunar/README.md) for attribution and download instructions.
+
 ---
 
 When adding new assets, please include:

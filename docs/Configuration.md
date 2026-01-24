@@ -33,7 +33,7 @@ Project configuration for the WebGPU 3D viewer.
 | `@playwright/test` | ^1.58.0 | E2E testing with Firefox |
 | `@webgpu/types` | ^0.1.54 | WebGPU TypeScript definitions |
 
-**Scripts:** `dev`, `build`, `preview`, `test`, `test:watch`, `test:smoke`, `test:e2e`
+**Scripts:** `dev`, `build`, `preview`, `download-assets`, `test`, `test:watch`, `test:smoke`, `test:e2e`
 
 See [BuildAndTest.md](BuildAndTest.md) for usage details.
 
@@ -231,7 +231,24 @@ dist/
 .DS_Store
 *.log
 coverage/
+.claude/
+test-results/
+playwright-report/
+
+# Downloaded assets (fetched at build time via download.sh scripts)
+assets/**/*.tif
+assets/**/*.tiff
+assets/**/*.exr
+assets/**/*.jpg
+assets/**/*.jpeg
+assets/**/*.png
+assets/**/*.gltf
+assets/**/*.glb
+# Keep committed models explicitly tracked
+!assets/models/*.glb
 ```
+
+Large binary assets are downloaded at build time rather than committed. Each asset folder (e.g., `assets/lunar/`) contains a `download.sh` script and `README.md` with attribution.
 
 ---
 

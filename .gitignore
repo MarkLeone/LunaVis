@@ -7,3 +7,16 @@ coverage/
 .claude/
 test-results/
 playwright-report/
+
+# Downloaded assets (fetched at build time via download.sh scripts)
+assets/**/*.tif
+assets/**/*.tiff
+assets/**/*.exr
+assets/**/*.jpg
+assets/**/*.jpeg
+assets/**/*.png
+assets/**/*.gltf
+assets/**/*.glb
+assets/**/*.tmp
+# Keep committed models explicitly tracked
+!assets/models/*.glb
