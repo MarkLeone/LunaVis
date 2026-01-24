@@ -23,6 +23,7 @@ export interface MaterialResources {
   pipeline: GPURenderPipeline;
   bindGroup: GPUBindGroup;
   uniformBuffer: GPUBuffer;
+  modelBindGroupLayout: GPUBindGroupLayout;
 }
 
 /**
@@ -198,8 +199,7 @@ export class SolidMaterial {
       },
       primitive: {
         topology: 'triangle-list',
-        cullMode: 'back',
-        frontFace: 'ccw',
+        cullMode: 'none',  // Disable culling for debugging
       },
       depthStencil: {
         format: 'depth24plus',
@@ -208,7 +208,7 @@ export class SolidMaterial {
       },
     });
 
-    this.resources = { pipeline, bindGroup, uniformBuffer };
+    this.resources = { pipeline, bindGroup, uniformBuffer, modelBindGroupLayout };
     this.needsUpdate = false;
 
     return this.resources;

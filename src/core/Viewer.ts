@@ -390,11 +390,18 @@ export class Viewer {
     // Render all meshes in the scene
     if (this.scene) {
       const meshes = this.scene.getMeshes();
+      if (meshes.length === 0) {
+        console.warn('[LunaVis] No meshes in scene');
+      }
       for (const mesh of meshes) {
         if (mesh.isReady) {
           mesh.render(renderPass, device, this.globalResources.bindGroup);
+        } else {
+          console.warn('[LunaVis] Mesh not ready:', mesh.meshId);
         }
       }
+    } else {
+      console.warn('[LunaVis] No scene set');
     }
 
     renderPass.end();

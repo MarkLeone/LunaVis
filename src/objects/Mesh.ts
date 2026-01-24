@@ -66,19 +66,10 @@ export class Mesh extends Object3D {
     // Write initial model matrix
     device.queue.writeBuffer(modelBuffer, 0, this.worldMatrix as unknown as ArrayBuffer);
 
-    // Create bind group for model matrix (group 2)
-    const modelBindGroupLayout = device.createBindGroupLayout({
-      label: `${this.meshId}-modelBindGroupLayout`,
-      entries: [{
-        binding: 0,
-        visibility: GPUShaderStage.VERTEX,
-        buffer: { type: 'uniform' },
-      }],
-    });
-
+    // Create bind group for model matrix using layout from material's pipeline
     const modelBindGroup = device.createBindGroup({
       label: `${this.meshId}-modelBindGroup`,
-      layout: modelBindGroupLayout,
+      layout: this.materialResources.modelBindGroupLayout,
       entries: [{
         binding: 0,
         resource: { buffer: modelBuffer },

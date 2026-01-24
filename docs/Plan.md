@@ -333,7 +333,7 @@ LunaVis/
 
 ---
 
-### M3: Scene Graph & Camera
+### M3: Scene Graph & Camera ✓
 **Goal:** Rotating cube with mouse orbit controls.
 
 **Deliverables:**
@@ -349,6 +349,8 @@ LunaVis/
 - Scene traversal
 
 **Files:** `objects/Object3D.ts`, `core/Scene.ts`, `core/Camera.ts`, `controls/OrbitControls.ts`
+
+**Status:** Complete (2026-01-24)
 
 ---
 

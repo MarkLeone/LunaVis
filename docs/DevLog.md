@@ -129,15 +129,71 @@ src/
 
 ---
 
+### M3: Scene Graph & Camera ✓
+
+**Goal:** Rotating cube with mouse orbit controls.
+
+**Completed:**
+- `Object3D` base class with:
+  - Position, rotation (Euler angles), scale properties
+  - Parent/child hierarchy with `add()`/`remove()`
+  - Cached local and world matrix computation
+  - Quaternion-based rotation from Euler angles (XYZ order)
+  - `traverse()` for scene graph iteration
+- `Scene` class extending Object3D:
+  - Root container for scene graph
+  - `getMeshes()` for render traversal
+- `Camera` class with:
+  - Perspective projection matrix
+  - View matrix via `mat4.lookAt()` (position/target/up)
+  - Combined view-projection matrix
+  - Aspect ratio updates on resize
+- `OrbitControls` with:
+  - Spherical coordinates (radius, polar, azimuth)
+  - Click+drag to orbit, scroll to zoom, right-click to pan
+  - Polar angle clamping to avoid gimbal lock
+  - `onUpdate` callback for render requests
+- Updated `SolidMaterial` with:
+  - Three bind group layouts (global, material, model)
+  - Explicit pipeline layout for bind group sharing
+- Updated `Mesh` extending Object3D:
+  - Per-instance model matrix uniform buffer
+  - Render method accepting global bind group
+- Updated `solid.wgsl` shader:
+  - MVP transform: `viewProjection * model * position`
+  - Bind groups: 0=camera, 1=material, 2=model
+- Depth buffer for proper 3D rendering
+
+**Files Created/Updated:**
+```
+src/
+├── objects/Object3D.ts     # Base transform class (new)
+├── core/Scene.ts           # Scene graph root (new)
+├── core/Camera.ts          # Perspective camera (new)
+├── controls/OrbitControls.ts # Mouse orbit (new)
+├── core/Viewer.ts          # Scene/camera management (updated)
+├── objects/Mesh.ts         # Extends Object3D (updated)
+├── materials/SolidMaterial.ts # 3-group layout (updated)
+└── shaders/solid.wgsl      # MVP transforms (updated)
+```
+
+**Technical Notes:**
+- Camera uses `mat4.lookAt()` directly for view matrix rather than computing inverse of world matrix from Euler angles — more reliable for camera orientation
+- wgpu-matrix uses column-major matrices matching WebGPU/WGSL expectations
+- Cube uses clockwise winding with `frontFace: 'cw'` in pipeline
+- Global bind group layout shared between Viewer and SolidMaterial for consistent binding
+
+**Verification:** Red-orange cube rotates continuously. Orbit controls allow interactive camera movement. E2E test passes.
+
+---
+
 ## Upcoming
 
-### M3: Scene Graph & Camera (Next)
-- `Object3D` base class with transform hierarchy
-- `Scene` class as root container
-- `Camera` class with perspective projection
-- `OrbitControls` for mouse interaction
-- `createCube()` primitive
-- MVP matrix transforms in shader
+### M4: Blinn-Phong Lighting (Next)
+- `DirectionalLight` class with direction, color, intensity
+- `blinn-phong.wgsl` shader with ambient + diffuse + specular
+- Light uniforms in global bind group
+- Debug UI (tweakpane) for light parameters
 
 ---
 

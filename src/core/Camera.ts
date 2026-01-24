@@ -1,12 +1,11 @@
 /**
  * Camera: Perspective camera with view and projection matrices.
  *
- * Provides view matrix (inverse of camera world transform) and
- * perspective projection matrix.
+ * Uses mat4.lookAt directly for view matrix computation rather than
+ * inverse of world matrix, which is more reliable for camera orientation.
  */
 
 import { mat4, vec3, Mat4, Vec3 } from 'wgpu-matrix';
-import { Object3D } from '@/objects/Object3D';
 
 /** Camera configuration options */
 export interface CameraOptions {
@@ -23,15 +22,17 @@ export interface CameraOptions {
 /**
  * Perspective camera for 3D rendering.
  *
+ * Uses explicit eye/target/up for view matrix (mat4.lookAt style).
+ *
  * @example
  * ```ts
  * const camera = new Camera({ fov: Math.PI / 4 });
- * camera.position = [0, 0, 5];
+ * camera.setPosition(0, 2, 5);
  * camera.lookAt([0, 0, 0]);
  * const vp = camera.viewProjectionMatrix;
  * ```
  */
-export class Camera extends Object3D {
+export class Camera {
   /** Vertical field of view in radians */
   private _fov: number;
   /** Near clipping plane */
@@ -41,19 +42,68 @@ export class Camera extends Object3D {
   /** Aspect ratio (width / height) */
   private _aspect: number;
 
+  /** Camera position in world space */
+  private _position: Vec3 = vec3.create(0, 0, 5);
+  /** Target point the camera looks at */
+  private _target: Vec3 = vec3.create(0, 0, 0);
+  /** Up vector */
+  private _up: Vec3 = vec3.create(0, 1, 0);
+
   /** Cached projection matrix */
   private _projectionMatrix: Mat4 = mat4.identity();
   /** Cached view matrix */
   private _viewMatrix: Mat4 = mat4.identity();
   /** Flag indicating projection needs update */
   private _projectionNeedsUpdate = true;
+  /** Flag indicating view matrix needs update */
+  private _viewNeedsUpdate = true;
 
   constructor(options: CameraOptions = {}) {
-    super();
     this._fov = options.fov ?? Math.PI / 4;
     this._near = options.near ?? 0.1;
     this._far = options.far ?? 1000;
     this._aspect = options.aspect ?? 1;
+  }
+
+  // --- Position and orientation ---
+
+  get position(): Vec3 {
+    return this._position;
+  }
+
+  set position(value: Vec3 | [number, number, number]) {
+    vec3.copy(value, this._position);
+    this._viewNeedsUpdate = true;
+  }
+
+  setPosition(x: number, y: number, z: number): this {
+    vec3.set(x, y, z, this._position);
+    this._viewNeedsUpdate = true;
+    return this;
+  }
+
+  get target(): Vec3 {
+    return this._target;
+  }
+
+  set target(value: Vec3 | [number, number, number]) {
+    vec3.copy(value, this._target);
+    this._viewNeedsUpdate = true;
+  }
+
+  setTarget(x: number, y: number, z: number): this {
+    vec3.set(x, y, z, this._target);
+    this._viewNeedsUpdate = true;
+    return this;
+  }
+
+  get up(): Vec3 {
+    return this._up;
+  }
+
+  set up(value: Vec3 | [number, number, number]) {
+    vec3.copy(value, this._up);
+    this._viewNeedsUpdate = true;
   }
 
   // --- Projection parameters ---
@@ -109,11 +159,14 @@ export class Camera extends Object3D {
   }
 
   /**
-   * Get the view matrix (inverse of world matrix).
-   * Transforms world space to camera/view space.
+   * Get the view matrix (transforms world to camera space).
+   * Uses mat4.lookAt for reliable camera orientation.
    */
   get viewMatrix(): Mat4 {
-    mat4.inverse(this.worldMatrix, this._viewMatrix);
+    if (this._viewNeedsUpdate) {
+      mat4.lookAt(this._position, this._target, this._up, this._viewMatrix);
+      this._viewNeedsUpdate = false;
+    }
     return this._viewMatrix;
   }
 
@@ -128,18 +181,10 @@ export class Camera extends Object3D {
 
   /**
    * Orient camera to look at a target point.
-   * Updates rotation to face the target from current position.
    */
-  lookAt(target: Vec3 | [number, number, number], _up: Vec3 | [number, number, number] = [0, 1, 0]): this {
-    const pos = this.position;
-    const dir = vec3.normalize(vec3.subtract(target, pos));
-
-    // Calculate yaw (Y rotation) and pitch (X rotation)
-    const yaw = Math.atan2(dir[0]!, dir[2]!);
-    const pitch = Math.asin(-dir[1]!);
-
-    this.setRotation(pitch, yaw, 0);
-
+  lookAt(target: Vec3 | [number, number, number]): this {
+    vec3.copy(target, this._target);
+    this._viewNeedsUpdate = true;
     return this;
   }
 

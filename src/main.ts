@@ -1,6 +1,6 @@
 /**
  * LunaVis entry point.
- * Initializes the WebGPU viewer with a rotating cube and orbit controls.
+ * Initializes the WebGPU viewer with a cube and orbit controls.
  */
 
 import { Viewer } from '@/core/Viewer';
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
 
     // Position camera to view the cube
     camera.setPosition(0, 2, 5);
-    camera.lookAt([0, 0, 0]);
+    camera.setTarget(0, 0, 0);
 
     // Set up viewer
     viewer.setScene(scene);
@@ -86,21 +86,6 @@ async function main(): Promise<void> {
     // Add cube to scene
     viewer.addMesh(cube);
     emitEvent('mesh-created', { id: cube.meshId });
-
-    // Animate cube rotation
-    let lastTime = performance.now();
-    function animate(time: number): void {
-      const dt = (time - lastTime) / 1000;
-      lastTime = time;
-
-      // Rotate cube around Y axis
-      const rotation = cube.rotation;
-      cube.setRotation(rotation[0]!, rotation[1]! + dt * 0.5, rotation[2]!);
-
-      viewer.requestRender();
-      requestAnimationFrame(animate);
-    }
-    requestAnimationFrame(animate);
 
     // Expose viewer to console for debugging
     (window as unknown as { viewer: Viewer; scene: Scene; camera: Camera; cube: Mesh }).viewer = viewer;
