@@ -282,7 +282,7 @@ LunaVis/
 
 ## Milestones
 
-### M1: WebGPU Initialization
+### M1: WebGPU Initialization ✓
 **Goal:** Blank canvas clears to a color.
 
 **Deliverables:**
@@ -297,23 +297,28 @@ LunaVis/
 
 **Files:** `core/Viewer.ts`, `main.ts`, `index.html`, config files
 
+**Status:** Complete (2026-01-24)
+
 ---
 
-### M2: Triangle Rendering
+### M2: Triangle Rendering ✓
 **Goal:** Hardcoded colored triangle on screen.
 
 **Deliverables:**
 - `Geometry` class: positions, normals, indices → GPU buffers
 - `SolidMaterial` class: color uniform, render pipeline
 - `Mesh` class: links Geometry + Material
-- `Renderer.render()`: encode draw commands
+- `Viewer.addMesh()`/`removeMesh()`: scene management
 - `primitives.ts`: `createTriangle()`
 
 **Tests:**
 - Geometry buffer creation
 - Primitive generation
+- E2E smoke test with mesh-created event
 
-**Files:** `geometry/`, `materials/SolidMaterial.ts`, `objects/Mesh.ts`, `core/Renderer.ts`, `shaders/solid.wgsl`
+**Files:** `geometry/`, `materials/SolidMaterial.ts`, `objects/Mesh.ts`, `shaders/solid.wgsl`, `vite-env.d.ts`
+
+**Status:** Complete (2026-01-24)
 
 ---
 

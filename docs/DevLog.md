@@ -85,14 +85,59 @@ See [BuildAndTest.md](BuildAndTest.md) for test commands and procedures.
 
 ---
 
+### M2: Triangle Rendering ✓
+
+**Goal:** Hardcoded red triangle on cornflower blue background.
+
+**Completed:**
+- `Geometry` class with:
+  - Positions, normals, indices storage
+  - GPU buffer creation with proper 4-byte alignment
+  - Uint16/Uint32 index format auto-detection
+- `SolidMaterial` class with:
+  - WGSL shader module
+  - Uniform buffer for color (vec4)
+  - Bind group and render pipeline creation
+  - Dynamic color updates via `needsUpdate` flag
+- `Mesh` class linking Geometry + Material
+- `Viewer.addMesh()`/`removeMesh()` for scene management
+- `createTriangle()` primitive generator
+- Vite type declarations for `.wgsl?raw` imports
+- Updated smoke test to verify `mesh-created` event
+
+**Files Created:**
+```
+src/
+├── geometry/
+│   ├── Geometry.ts       # CPU vertex data + GPU buffers
+│   └── primitives.ts     # createTriangle(), createCube()
+├── materials/
+│   └── SolidMaterial.ts  # Flat color material
+├── objects/
+│   └── Mesh.ts           # Geometry + Material linkage
+├── shaders/
+│   └── solid.wgsl        # Pass-through vertex + flat color fragment
+└── vite-env.d.ts         # Vite asset type declarations
+```
+
+**Technical Notes:**
+- WebGPU `writeBuffer` requires 4-byte aligned data; Uint16Array indices need padding
+- TypeScript 5.x typed arrays (`Float32Array<ArrayBufferLike>`) need type assertions for WebGPU APIs
+- Shader uses pass-through vertex transformation (no MVP yet)
+
+**Verification:** Red triangle renders on cornflower blue background. E2E test passes.
+
+---
+
 ## Upcoming
 
-### M2: Triangle Rendering (Next)
-- `Geometry` class with GPU buffer management
-- `SolidMaterial` class with render pipeline
-- `Mesh` class linking geometry + material
-- `Renderer.render()` command encoding
-- `createTriangle()` primitive
+### M3: Scene Graph & Camera (Next)
+- `Object3D` base class with transform hierarchy
+- `Scene` class as root container
+- `Camera` class with perspective projection
+- `OrbitControls` for mouse interaction
+- `createCube()` primitive
+- MVP matrix transforms in shader
 
 ---
 

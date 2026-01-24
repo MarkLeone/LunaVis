@@ -47,9 +47,11 @@ Opens Vite dev server at http://localhost:3000 (or next available port).
 ### Verify It Works
 
 1. Open Firefox at http://localhost:3000
-2. Canvas should display cornflower blue (#6495ED)
+2. Canvas should display a red triangle on cornflower blue background
 3. Console should show:
    ```
+   [LunaVis] Mesh-created
+   {"event":"mesh-created","version":"0.1.0","id":"mesh-..."}
    [LunaVis] Ready
    {"event":"ready","version":"0.1.0"}
    ```
