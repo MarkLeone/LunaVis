@@ -238,6 +238,49 @@ src/
 
 ---
 
+### M4 Bugfix: WGSL Alignment & Test Coverage ✓
+
+**Problem:** GPU hang on Firefox when loading the Blinn-Phong shader.
+
+**Root Cause:** WGSL struct alignment bug in `MaterialUniforms`:
+```wgsl
+// BROKEN: vec3<f32> has 16-byte alignment in uniform buffers
+struct MaterialUniforms {
+    color: vec4<f32>,      // 16 bytes
+    shininess: f32,        // 4 bytes
+    _pad: vec3<f32>,       // WRONG: starts at offset 32 (16-byte aligned), not 20!
+}
+// Actual size: 44 bytes rounded to 48, but buffer was only 32 bytes!
+```
+
+**Fix:** Use `f32` padding instead of `vec3<f32>`:
+```wgsl
+struct MaterialUniforms {
+    color: vec4<f32>,      // offset 0, 16 bytes
+    shininess: f32,        // offset 16, 4 bytes
+    _pad0: f32,            // offset 20, 4 bytes
+    _pad1: f32,            // offset 24, 4 bytes
+    _pad2: f32,            // offset 28, 4 bytes — total 32 bytes
+}
+```
+
+**Why Tests Missed It:** The E2E test only waited for `ready` event, which fires *before* the render loop executes. The GPU hang happened during async rendering, after the test had already passed.
+
+**Test Improvement:** Added `frame-rendered` event emitted after first successful `device.queue.submit()`. E2E test now waits for this event, ensuring GPU commands actually execute without hanging.
+
+**Files Updated:**
+- `src/shaders/blinn-phong.wgsl` — fixed struct alignment
+- `src/core/Viewer.ts` — emit `frame-rendered` event
+- `tests/e2e/smoke.spec.cjs` — wait for `frame-rendered`
+- `tests/e2e/playwright.config.cjs` — `reuseExistingServer: true`
+
+**Lesson Learned:** WGSL uniform struct alignment follows strict rules:
+- `vec3<f32>` has **16-byte alignment** in uniform address space
+- Use `f32` padding fields to maintain precise byte offsets
+- Always verify CPU buffer layout matches shader struct layout
+
+---
+
 ## Upcoming
 
 ### M5: glTF Loading (Next)

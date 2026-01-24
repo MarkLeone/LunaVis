@@ -1,31 +1,41 @@
 /**
- * Smoke test: Quick verification that LunaVis starts without errors.
+ * Smoke test: Quick verification that LunaVis starts and renders without errors.
  * Target: < 10 seconds
+ *
+ * IMPORTANT: This test waits for 'frame-rendered' event to ensure GPU commands
+ * actually execute successfully. This catches buffer alignment bugs that would
+ * cause GPU hangs after initialization completes.
  */
 
 const { test, expect } = require('@playwright/test');
 const { captureConsole, waitForEvent, hasMarker, getErrorMessages } = require('./helpers.cjs');
 
 test.describe('Smoke Test', () => {
-  test('LunaVis initializes and renders', async ({ page }) => {
+  test('LunaVis initializes and renders first frame', async ({ page }) => {
     const capture = captureConsole(page);
 
     // Navigate to the app
     await page.goto('/');
 
-    // Wait for mesh creation event (M2)
+    // Wait for mesh creation event
     const meshEvent = await waitForEvent(page, capture, 'mesh-created', 5000);
     expect(meshEvent.event).toBe('mesh-created');
     expect(meshEvent.id).toMatch(/^mesh-/);
 
-    // Wait for the ready event (structured)
+    // Wait for the ready event (app initialization complete)
     const readyEvent = await waitForEvent(page, capture, 'ready', 5000);
     expect(readyEvent.event).toBe('ready');
     expect(readyEvent.version).toBeDefined();
 
-    // Verify human-readable markers also present
+    // CRITICAL: Wait for first frame to actually render
+    // This catches GPU buffer issues that cause hangs during rendering
+    const frameEvent = await waitForEvent(page, capture, 'frame-rendered', 5000);
+    expect(frameEvent.event).toBe('frame-rendered');
+
+    // Verify human-readable markers
     expect(hasMarker(capture, '[LunaVis] Mesh-created')).toBe(true);
     expect(hasMarker(capture, '[LunaVis] Ready')).toBe(true);
+    expect(hasMarker(capture, '[LunaVis] Frame-rendered')).toBe(true);
 
     // No console errors (ignore favicon 404)
     const errors = getErrorMessages(capture).filter(

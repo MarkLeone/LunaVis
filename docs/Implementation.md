@@ -122,7 +122,8 @@ renderLoop()
     │   └── drawIndexed()
     │
     ├── renderPass.end()
-    └── queue.submit([commandEncoder.finish()])
+    ├── queue.submit([commandEncoder.finish()])
+    └── emit 'frame-rendered' event (first frame only, for E2E tests)
 ```
 
 ### Vertex Buffer Layout
@@ -181,6 +182,8 @@ Used for operations that can fail without throwing.
 
 ## Buffer Alignment
 
+### writeBuffer Alignment
+
 WebGPU requires 4-byte alignment for `writeBuffer()`:
 
 - `Float32Array` — naturally aligned
@@ -192,6 +195,40 @@ const padded = new Uint16Array(Math.ceil(indices.length / 2) * 2);
 padded.set(indices);
 device.queue.writeBuffer(buffer, 0, padded);
 ```
+
+### WGSL Uniform Struct Alignment
+
+**Critical:** WGSL types in uniform buffers have strict alignment requirements:
+
+| Type | Alignment | Size |
+|------|-----------|------|
+| `f32` | 4 bytes | 4 bytes |
+| `vec2<f32>` | 8 bytes | 8 bytes |
+| `vec3<f32>` | **16 bytes** | 12 bytes |
+| `vec4<f32>` | 16 bytes | 16 bytes |
+| `mat4x4<f32>` | 16 bytes | 64 bytes |
+
+**Common Pitfall:** Using `vec3<f32>` for padding creates gaps:
+
+```wgsl
+// WRONG: vec3 has 16-byte alignment, not 4-byte!
+struct Bad {
+    color: vec4<f32>,      // offset 0, 16 bytes
+    shininess: f32,        // offset 16, 4 bytes
+    _pad: vec3<f32>,       // offset 32 (not 20!), 12 bytes → total 44 bytes
+}
+
+// CORRECT: Use f32 for precise padding
+struct Good {
+    color: vec4<f32>,      // offset 0, 16 bytes
+    shininess: f32,        // offset 16, 4 bytes
+    _pad0: f32,            // offset 20, 4 bytes
+    _pad1: f32,            // offset 24, 4 bytes
+    _pad2: f32,            // offset 28, 4 bytes → total 32 bytes
+}
+```
+
+Mismatched CPU/GPU struct sizes cause out-of-bounds reads → GPU hangs.
 
 ## Transform Hierarchy
 

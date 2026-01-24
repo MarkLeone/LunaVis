@@ -22,11 +22,13 @@ struct GlobalUniforms {
     _pad3: f32,
 }
 
-// Group 1: Material uniforms
+// Group 1: Material uniforms (32 bytes)
 struct MaterialUniforms {
-    color: vec4<f32>,      // Base color (RGBA)
-    shininess: f32,        // Specular exponent (higher = sharper highlights)
-    _pad: vec3<f32>,       // Padding to 32 bytes
+    color: vec4<f32>,      // Base color (RGBA) - offset 0, 16 bytes
+    shininess: f32,        // Specular exponent - offset 16, 4 bytes
+    _pad0: f32,            // padding - offset 20
+    _pad1: f32,            // padding - offset 24
+    _pad2: f32,            // padding - offset 28, total 32 bytes
 }
 
 // Group 2: Object uniforms (per-mesh)
@@ -90,8 +92,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let diffuse = global.lightColor * material.color.rgb * NdotL;
 
     // Specular component (Blinn-Phong)
+    // Only apply specular when surface faces light (NdotL > 0)
     let NdotH = max(dot(N, H), 0.0);
-    let specular = global.lightColor * pow(NdotH, material.shininess);
+    let specularStrength = select(0.0, pow(NdotH, material.shininess), NdotL > 0.0);
+    let specular = global.lightColor * specularStrength;
 
     // Combine components
     let finalColor = ambient + diffuse + specular;

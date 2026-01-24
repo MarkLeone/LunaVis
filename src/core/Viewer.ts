@@ -472,5 +472,26 @@ export class Viewer {
 
     // Submit commands
     device.queue.submit([commandEncoder.finish()]);
+
+    // Emit frame-rendered event (for testing)
+    this.emitFrameRendered();
+  }
+
+  /** Track if first frame event has been emitted */
+  private firstFrameEmitted = false;
+
+  /**
+   * Emit frame-rendered event once after first successful render.
+   * Used by E2E tests to verify rendering actually works.
+   */
+  private emitFrameRendered(): void {
+    if (this.firstFrameEmitted) return;
+    this.firstFrameEmitted = true;
+
+    // Emit after a microtask to ensure GPU work is queued
+    queueMicrotask(() => {
+      console.info('[LunaVis] Frame-rendered');
+      console.info(JSON.stringify({ event: 'frame-rendered' }));
+    });
   }
 }
