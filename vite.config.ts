@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
 
@@ -14,5 +15,11 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
+  },
+  // Vitest configuration (merged from vitest.config.ts)
+  test: {
+    globals: false,
+    environment: 'node',
+    exclude: ['**/node_modules/**', '**/e2e/**'],
   },
 });

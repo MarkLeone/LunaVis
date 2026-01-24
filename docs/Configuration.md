@@ -87,7 +87,10 @@ This adds `navigator.gpu`, `GPUDevice`, `GPUBuffer`, etc. to the global scope.
 
 ### vite.config.ts
 
+Combines Vite build settings and Vitest test configuration in one file.
+
 ```typescript
+/// <reference types="vitest" />
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
 
@@ -104,47 +107,30 @@ export default defineConfig({
   build: {
     target: 'esnext',
   },
+  // Vitest configuration
+  test: {
+    globals: false,
+    environment: 'node',
+    exclude: ['**/node_modules/**', '**/e2e/**'],
+  },
 });
 ```
 
-**Key Settings:**
+**Vite Settings:**
 - **Path alias:** `@/` maps to `src/` (must match tsconfig)
 - **WGSL imports:** Shaders can be imported as raw strings via `?raw` suffix
 - **Build target:** `esnext` for WebGPU compatibility (no transpilation)
+
+**Vitest Settings:**
+- `globals: false` — Explicit imports (`import { describe, it } from 'vitest'`)
+- `environment: 'node'` — Tests run in Node (WebGPU mocking required for GPU tests)
+- `exclude` — Skips e2e/ directory (handled by Playwright)
 
 **Shader Import Example:**
 ```typescript
 import shaderCode from '@/shaders/blinn-phong.wgsl?raw';
 // shaderCode is a string containing the WGSL source
 ```
-
----
-
-## Vitest Configuration
-
-### vitest.config.ts
-
-```typescript
-import { defineConfig } from 'vitest/config';
-import { resolve } from 'path';
-
-export default defineConfig({
-  test: {
-    globals: false,
-    environment: 'node',
-  },
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, 'src'),
-    },
-  },
-});
-```
-
-**Settings:**
-- `globals: false` — Explicit imports (`import { describe, it } from 'vitest'`)
-- `environment: 'node'` — Tests run in Node, not browser (WebGPU mocking required for GPU tests)
-- Path alias matches Vite/TypeScript config
 
 ---
 
