@@ -572,3 +572,326 @@ Screenshot comparison for detecting rendering changes. Will add after M4 when vi
 ## Commands
 
 See [BuildAndTest.md](BuildAndTest.md) for detailed build, test, and development procedures.
+
+---
+
+# Part 3: Moon Rendering Extension
+
+# Moon Rendering Extension for LunaVis
+
+This plan extends `docs/Plan.md` with a new section covering Moon rendering capabilities using NASA's CGI Moon Kit data.
+
+## Data Source: NASA CGI Moon Kit
+
+From [NASA SVS CGI Moon Kit](https://svs.gsfc.nasa.gov/4720):
+
+> Within 3D animation software, an object like the Moon begins as a simple geometric shape, in this case a sphere. Texture maps like the ones on this page are used to add detail to the model. The color map tells the software how to paint the surface, and the displacement map tells it how to add the shape details that define the lunar terrain. Without them, the Moon model is just a smooth, monochrome ball. Although these maps are flat rectangles, the software understands them as maps of a spherical surface and knows how to warp them onto spherical geometry.
+>
+> Each pixel in these texture maps corresponds to a point on the lunar surface defined by a longitude-latitude pair. Pixels in the color map contain the "base color" of the surface, before applying the effects of varying light and camera angles (called incidence angle *i* and emission angle *e* in the technical description). Pixels in the displacement map contain the height of the surface at the corresponding locations.
+
+- **Color Map**: `lroc_color_2k.jpg` (2048x1024) - smallest, suitable for initial work
+  - Larger: 4k, 8k, 16k TIFFs; float16 EXR for linear color
+  - Equirectangular projection centered on 0 deg longitude
+- **Displacement Map**: `ldem_4.tif` (1440x720 float) or `ldem_4_uint.tif` (uint16)
+  - Higher res: 16, 64 pixels per degree
+  - Values in km relative to 1737.4 km radius (float) or half-meters offset by +10km (uint16)
+
+For the initial milestone, use the 2k JPG color map. Displacement maps will require TIFF loading or pre-conversion to PNG.
+
+---
+
+## M7: Textured Sphere (Next Milestone)
+
+**Goal**: Render the Moon as a sphere with the NASA color texture applied.
+
+**Note**: The NASA color map provides Hapke-normalized albedo (surface reflectance with photometric effects removed), not pre-lit color. This makes it suitable as the diffuse term in Blinn-Phong lighting — we apply our own illumination based on light direction and view angle.
+
+### Required Changes
+
+#### 1. Add UV Support to Geometry
+
+Modify [`src/geometry/Geometry.ts`](src/geometry/Geometry.ts):
+
+```typescript
+export interface GeometryData {
+  positions: Float32Array;
+  normals: Float32Array;
+  uvs?: Float32Array;  // NEW: optional UV coordinates (2 floats per vertex)
+  indices: Uint16Array | Uint32Array;
+}
+```
+
+Add `uvBuffer` to `GeometryBuffers` and handle in `createBuffers()`.
+
+#### 2. Create Sphere Primitive
+
+Add to [`src/geometry/primitives.ts`](src/geometry/primitives.ts):
+
+```typescript
+export function createUVSphere(
+  radius: number,
+  latSegments: number,  // "stacks" (poles to equator)
+  lonSegments: number   // "slices" (around equator)
+): Geometry
+```
+
+- Generate vertices with equirectangular UV mapping (matches NASA data)
+- UV.x = longitude / (2*PI), UV.y = latitude / PI
+- Handle pole singularity (duplicate vertices with different UVs)
+
+#### 3. Create TexturedMaterial
+
+New file [`src/materials/TexturedMaterial.ts`](src/materials/TexturedMaterial.ts):
+
+- Accepts `GPUTexture` or image URL
+- Bind group includes sampler + texture view
+- Group 1: `{ sampler, texture, optional: color tint, shininess }`
+
+#### 4. Create Textured Shader
+
+New file [`src/shaders/textured-blinn-phong.wgsl`](src/shaders/textured-blinn-phong.wgsl):
+
+- Vertex shader passes UV to fragment
+- Fragment shader samples texture for base color
+- Combine with existing Blinn-Phong lighting
+
+#### 5. Texture Loading Utility
+
+New file [`src/loaders/TextureLoader.ts`](src/loaders/TextureLoader.ts):
+
+- Load image from URL, create `GPUTexture`
+- Handle mipmap generation (important for spheres viewed at varying distances)
+- Support `createImageBitmap()` for efficient loading
+
+### Files to Create/Modify
+
+| File | Action |
+|------|--------|
+| `src/geometry/Geometry.ts` | Add UV support |
+| `src/geometry/primitives.ts` | Add `createUVSphere()` |
+| `src/materials/TexturedMaterial.ts` | New file |
+| `src/shaders/textured-blinn-phong.wgsl` | New file |
+| `src/loaders/TextureLoader.ts` | New file |
+| `src/main.ts` | Add Moon demo option |
+| `assets/textures/` | Add NASA color map |
+
+---
+
+## M8: GPU-Displaced Moon Terrain (Future)
+
+**Goal**: Generate a crack-free displaced triangle mesh using a WebGPU compute shader, reading the displacement map directly on the GPU with zero-copy to the vertex stage.
+
+### Architecture Overview
+
+```
+                                    +------------------+
+ Displacement Map (Texture) ------> | Compute Shader   |
+                                    | (Tessellation)   |
+                                    +--------+---------+
+                                             |
+                                             v
+                                    +------------------+
+                                    | Storage Buffer   | <-- VERTEX | STORAGE usage
+                                    | (Positions/Norms)|
+                                    +--------+---------+
+                                             |
+                                             v
+                                    +------------------+
+                                    | Render Pipeline  |
+                                    | (Vertex Shader)  |
+                                    +------------------+
+```
+
+### Key Technical Challenges
+
+#### 1. Crack-Free Tessellation
+
+Adjacent tiles at different LODs create T-junctions that cause cracks. Solutions:
+
+- **Uniform tessellation**: Same subdivision everywhere (simple, expensive)
+- **Restricted quadtree**: Adjacent tiles differ by at most 1 LOD level; stitch edges
+- **CDLOD** (Continuous Distance-Dependent LOD): Morph vertices between LOD levels
+
+Recommended: Start with uniform tessellation, add LOD later.
+
+#### 2. Camera-Aware LOD
+
+For real-time LOD:
+
+- Compute shader checks distance from camera to each tile
+- Outputs vertex count for indirect draw
+- Uses `drawIndexedIndirect()` with GPU-generated counts
+
+#### 3. Displacement Sampling Without Aliasing
+
+- Use `textureSampleLevel()` with explicit mip level based on tessellation density
+- Pre-filter displacement map (gaussian blur for lower mips)
+- Consider bicubic filtering in shader for smooth results
+
+#### 4. Zero-Copy Buffer Strategy
+
+```typescript
+const vertexBuffer = device.createBuffer({
+  size: maxVertices * VERTEX_STRIDE,
+  usage: GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE,
+});
+```
+
+Compute shader writes to storage buffer; same buffer used as vertex input.
+
+### Compute Shader Outline
+
+```wgsl
+@group(0) @binding(0) var displacementMap: texture_2d<f32>;
+@group(0) @binding(1) var<storage, read_write> vertices: array<Vertex>;
+@group(0) @binding(2) var<uniform> params: TessParams;
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let uv = vec2<f32>(id.xy) / vec2<f32>(params.gridSize);
+    let height = textureSampleLevel(displacementMap, sampler, uv, 0.0).r;
+    
+    // Spherical coordinates from UV
+    let theta = uv.x * 2.0 * PI;  // longitude
+    let phi = uv.y * PI;          // latitude (0=north pole, PI=south)
+    
+    // Base position on unit sphere
+    let sinPhi = sin(phi);
+    let pos = vec3(sinPhi * cos(theta), cos(phi), sinPhi * sin(theta));
+    
+    // Apply displacement
+    let radius = params.baseRadius + height * params.heightScale;
+    let displaced = pos * radius;
+    
+    // Write vertex (compute normal from adjacent samples for accuracy)
+    vertices[id.y * params.gridSize.x + id.x] = Vertex(displaced, normal, uv);
+}
+```
+
+### Research Needed
+
+- **Optimal workgroup size** for tessellation (likely 8x8 or 16x16)
+- **Index buffer generation**: Can also be done in compute, or use a fixed pattern
+- **Normal calculation**: Central differences from displacement map vs. cross product of edges
+- **Memory budget**: 64 px/deg = 23040x11520 at full res; need hierarchical approach
+
+---
+
+## M9: Ray-Traced Shadow Maps (Future)
+
+**Goal**: Replace rasterized shadow maps with compute-based ray tracing for accurate self-shadowing on lunar terrain.
+
+### Why Ray Tracing for Moon Shadows?
+
+- Lunar terrain has extreme relief (craters, mountains)
+- Traditional shadow maps suffer from resolution limits and peter-panning
+- Ray tracing gives pixel-perfect shadows for any sun angle
+- WebGPU compute shaders can accelerate this
+
+### Architecture
+
+```
++-----------------+     +-------------------+     +----------------+
+| Triangle Buffer | --> | Compute Shader    | --> | Shadow Texture |
+| (from M8)       |     | (Ray-Triangle)    |     | (R8 or R32F)   |
++-----------------+     +-------------------+     +----------------+
+                               ^
+                               |
+                        +------+------+
+                        | Light Dir   |
+                        | (Uniform)   |
+                        +-------------+
+```
+
+### Implementation Strategy
+
+1. **Acceleration Structure**: BVH built on CPU or in compute shader
+   - Without BVH: O(pixels x triangles) - acceptable for low-poly
+   - With BVH: O(pixels x log(triangles)) - needed for high-res terrain
+
+2. **Screen-Space vs. Light-Space**:
+   - Screen-space: Cast rays from visible pixels toward sun
+   - Light-space: Traditional shadow map approach but with ray tracing
+   
+   Recommend screen-space for initial implementation.
+
+3. **Soft Shadows**: Sample multiple rays in cone toward sun disk (physically accurate for lunar surface)
+
+### Shader Outline
+
+```wgsl
+@group(0) @binding(0) var<storage, read> triangles: array<Triangle>;
+@group(0) @binding(1) var<storage, read_write> shadowMap: texture_storage_2d<r8unorm, write>;
+@group(0) @binding(2) var<uniform> light: LightParams;
+@group(0) @binding(3) var depthTexture: texture_depth_2d;
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    // Reconstruct world position from depth buffer
+    let worldPos = reconstructWorldPos(id.xy, depthTexture);
+    
+    // Ray toward sun
+    let rayDir = -light.direction;
+    let rayOrigin = worldPos + rayDir * BIAS;
+    
+    // Iterate triangles (or traverse BVH)
+    var inShadow = 0.0;
+    for (var i = 0u; i < arrayLength(&triangles); i++) {
+        if (rayTriangleIntersect(rayOrigin, rayDir, triangles[i])) {
+            inShadow = 1.0;
+            break;
+        }
+    }
+    
+    textureStore(shadowMap, id.xy, vec4(1.0 - inShadow));
+}
+```
+
+### Research Needed
+
+- **BVH construction** in WebGPU (GPU-accelerated vs. CPU build)
+- **Hybrid approach**: Use rasterized shadow map for initial occlusion test, ray trace only near shadow boundaries
+- **Temporal stability**: Reproject shadows from previous frame to reduce flickering
+
+---
+
+## Appendix: Insights and Recommendations
+
+### Texture Format Considerations
+
+| Format | Pros | Cons |
+|--------|------|------|
+| JPG | Small, web-native | 8-bit, lossy, no alpha |
+| PNG | Lossless, web-native | Large for 16k, 8-bit |
+| TIFF | NASA's native format, 16-bit | Not web-native, need library |
+| EXR | HDR, float16 | Not web-native, need library |
+
+**Recommendation**: Convert NASA TIFFs to PNG or KTX2 (GPU-compressed) for web use. Use JPG for initial development.
+
+### Coordinate System Alignment
+
+NASA maps use:
+- Longitude 0 deg at center of image
+- Latitude 90N at top, 90S at bottom
+
+Standard equirectangular sphere mapping expects:
+- U=0 at longitude -180 (or 180), U=1 at longitude 180
+- V=0 at north pole, V=1 at south pole
+
+**May need UV offset**: Shift U by 0.5 to align 0 deg longitude correctly.
+
+### Performance Targets
+
+| Milestone | Target | Notes |
+|-----------|--------|-------|
+| M7 (Textured) | 60 FPS | Simple sphere, negligible GPU load |
+| M8 (Displaced) | 30+ FPS | Compute tessellation is one-time per view change |
+| M9 (Ray Shadows) | 30+ FPS | Depends heavily on triangle count and BVH quality |
+
+### Progressive Enhancement Path
+
+1. **M7**: Textured sphere - proves texture pipeline works
+2. **M8a**: Uniform displacement - no LOD, fixed tessellation
+3. **M8b**: Add LOD with CDLOD or quadtree
+4. **M9a**: Brute-force ray shadows (limited triangles)
+5. **M9b**: BVH-accelerated shadows for full terrain
