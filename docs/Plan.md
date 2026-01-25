@@ -914,6 +914,8 @@ Based on developer interview:
 - Node bounds are computed in double precision
 - Bounding spheres correctly encompass spherified cube patches
 
+**Status:** Complete (2026-01-25)
+
 ---
 
 ### M9 — LOD Selection & Frustum Culling
