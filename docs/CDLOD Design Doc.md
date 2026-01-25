@@ -300,3 +300,57 @@ Summary
 • **Texture Usage:** Treat the color map as the **Single Scattering Albedo (**w**)**.  
 • **Key Parameters:** Use BS0​≈1.8 and hS​≈0.07 to achieve the correct "dusty" look and opposition surge.  
 • **Warning:** Do **not** multiply the final calculated BRDF by the albedo map again at the end of the shader. The albedo is already integral to the math. Doing so would apply the albedo twice, resulting in an artificially dark moon.  
+
+
+Note on LOD Threshold
+
+Use a Geometric Progression (specifically a factor of 2) rather than a complex runtime screen-space error metric.
+Here is the detailed justification based on the sources:
+1. Recommendation: Use Geometric Progression (Factor of 2)
+For CDLOD on a quad-sphere, the "state-of-the-art" implementation relies on pre-calculated distance thresholds where each level covers twice the distance of the next detailed level.
+• The Logic: CDLOD uses a regular grid structure where each quadtree subdivision increases mesh density by a factor of 4 (2x resolution along each axis). To maintain a constant screen-space density (i.e., making triangles appear roughly the same size in pixels regardless of distance), the viewing distance for each LOD level must therefore scale by a factor of roughly 2.0.
+• Predictability: Unlike older Chunked LOD methods that computed error metrics per-node (which could cause "popping" or inconsistent rendering where adjacent nodes didn't match), CDLOD uses a uniform, predictable distance function across the entire terrain. This stability is required for the vertex shader to perform smooth geomorphing without needing CPU-side adjacency checks.
+2. Why Screen-Space Error is Less Suitable for CDLOD
+While "screen-space error" is the theoretical goal, implementing it as an adaptive runtime check (projecting geometric error to screen pixels per frame) is unnecessary and often detrimental for CDLOD.
+• Implicit vs. Explicit: The geometric progression implicitly achieves a target screen-space error. By doubling the distance every time you halve the geometry resolution, you effectively keep the projection error constant.
+• Morphing Stability: CDLOD hides transitions by morphing vertices in the vertex shader. This morphing relies on the transition zone being a fixed, continuous function of distance (the "morph area"). If you used an adaptive screen-space metric that fluctuated based on viewing angle or local terrain roughness, the morph values calculated on the GPU might de-sync from the CPU selection, causing cracks or visual artifacts.
+3. Implementation Detail: The "Morph Area"
+Your distance thresholds should not be single hard lines. You must define a morph range (typically the last 10-30% of each LOD's distance interval).
+• Calculation: If LOD 0 ends at distance D, and LOD 1 ends at 2D, the transition for vertices in LOD 0 should start at approximately 0.7D and complete at D.
+• Vertex Shader: The shader uses these pre-calculated ranges to determine a morphLerp factor (0.0 to 1.0). If the distance falls within the morph area, the vertex slides to the position it would occupy in the next coarser grid.
+Summary Plan: Calculate your thresholds as: RangeLOD​=BaseDistance×2LOD
+ Where BaseDistance is tuned based on your desired pixel-per-triangle density and Field of View (FOV).
+How do you define the morph range for each level?
+How can Earthshine be modeled for unlit lunar regions?
+How does phase reddening impact the moon's spectral appearance?
+
+Alternative option:
+
+Use geometric progression but derive baseDistance from a screen-space target:
+
+// At init time, compute base threshold from desired pixel error
+baseDistance = (nodeSize * screenHeight) / (maxPixelError * 2 * tan(fov/2))
+
+// At runtime, use simple geometric progression
+threshold[LOD] = baseDistance / (2 ^ LOD)
+
+Pros:
+
+
+    Runtime calculation is simple (just distance comparison)
+
+    Still adapts to screen/FOV (recalculate base on resize)
+
+    Easy to understand: "subdivide when node would be > 4 pixels of error"
+
+    The maxPixelError parameter (default ~4 pixels) is intuitive: "how much
+    geometric popping am I willing to tolerate?"
+
+
+Cons:
+
+
+    Slightly more setup complexity
+
+    Need to recalculate on resize (but that's cheap)
+
