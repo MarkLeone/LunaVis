@@ -18,6 +18,12 @@ export type GeometryId = Brand<string, 'GeometryId'>;
 /** Type-safe object identifier */
 export type ObjectId = Brand<string, 'ObjectId'>;
 
+/** Type-safe QuadNode identifier */
+export type QuadNodeId = Brand<string, 'QuadNodeId'>;
+
+/** Cube face identifier (0=+Z, 1=-Z, 2=+X, 3=-X, 4=+Y, 5=-Y) */
+export type FaceId = 0 | 1 | 2 | 3 | 4 | 5;
+
 /** 3D vector as tuple (x, y, z) */
 export type Vec3 = readonly [number, number, number];
 
@@ -83,6 +89,13 @@ export function geometryId(id: string): GeometryId {
  */
 export function objectId(id: string): ObjectId {
   return id as ObjectId;
+}
+
+/**
+ * Creates a branded QuadNodeId from a string.
+ */
+export function quadNodeId(id: string): QuadNodeId {
+  return id as QuadNodeId;
 }
 
 /** Type guard for successful Result */
