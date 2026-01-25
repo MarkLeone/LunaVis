@@ -134,6 +134,10 @@ type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
 
 ## CDLOD Terrain System
 
+> **See also:** [CDLOD Design Doc.md](CDLOD%20Design%20Doc.md) for the full technical specification including GPU vertex shader, heightmap sampling, geomorphing, and Hapke BRDF details.
+>
+> **TODO:** Incorporate the CDLOD Design Doc into this main design document once the implementation is complete (after M19).
+
 ### Spherified Cube Geometry
 
 **Decision:** Represent the Moon as a spherified cube (6 quad faces projected onto a sphere).
