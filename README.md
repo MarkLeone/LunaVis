@@ -12,14 +12,23 @@ npm run download-assets  # Fetch lunar textures (~120 MB)
 npm run dev
 ```
 
-Open Firefox (with WebGPU enabled) at http://localhost:3000
+Then open http://localhost:3000
 
-### Enable WebGPU in Firefox
-1. Go to `about:config`
-2. Set `dom.webgpu.enabled` to `true`
-3. Restart Firefox
+## Browser and OS Support for WebGPU
 
-> **Note:** Chrome has driver issues with Intel Arc GPUs on Linux. Firefox works reliably.
+| Browser | Windows | macOS | Linux | Notes |
+|--------|---------|-------|-------|------|
+| Chrome | ✅ | ✅ | ✅ | DX12 (Win), Metal (macOS), Vulkan (Linux) |
+| Edge | ✅ | ✅ | ✅ | Same WebGPU stack as Chrome |
+| Firefox | ✅ | ✅ | 🚧 | On Linux, enable `about:config -> dom.webgpu.enabled` |
+| Safari | ❌ | ✅ | ❌ | macOS only (Metal backend) |
+
+> - ✅ **Supported** — enabled by default, no flags required  
+> - ⚠️ **Partial** — supported with platform or backend limitations  
+> - 🚧 **Experimental** — behind flags or incomplete  
+> - ❌ **Not supported**
+
+
 
 ## Features
 
