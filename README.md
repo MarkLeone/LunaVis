@@ -1,8 +1,8 @@
 # LunaVis
 
-A WebGPU 3D model viewer built from scratch in TypeScript. Features Blinn-Phong lighting, orbit controls, and a debug UI. Future plans include compute shader ray-casted shadows.
+A WebGPU lunar visualization built from scratch in TypeScript. Features textured Moon rendering with NASA imagery, Blinn-Phong lighting, glTF model loading, and orbit controls.
 
-**Status:** M4 complete — Lit cube with interactive controls
+**Status:** M7 complete — Textured Moon with NASA color map
 
 ## Quick Start
 
@@ -23,10 +23,14 @@ Open Firefox (with WebGPU enabled) at http://localhost:3000
 
 ## Features
 
-- **Blinn-Phong lighting** — Ambient + diffuse + specular shading
-- **Directional light** — Adjustable direction, color, intensity
+- **Textured Moon** — NASA LROC color map with KTX2 compression and mipmaps
+- **glTF model loading** — Load .glb/.gltf models via @loaders.gl
+- **Blinn-Phong lighting** — Ambient + diffuse + specular shading (specular disabled for Moon)
+- **Auto camera framing** — Positions camera based on model bounding box
+- **Camera-following light** — Illumination from upper-left shoulder position
 - **Orbit controls** — Click-drag to rotate, scroll to zoom, right-click to pan
 - **Debug UI** — Tweakpane panel for real-time parameter adjustment
+- **FPS counter** — stats.js performance monitoring
 - **Reactive rendering** — Only renders when scene changes (power efficient)
 
 ## Controls
@@ -45,12 +49,13 @@ Tweakpane UI (top-right) adjusts light, ambient, and material properties.
 - **M2:** Triangle rendering, geometry buffers, solid color shader
 - **M3:** Scene graph, camera, orbit controls, depth buffer
 - **M4:** Blinn-Phong lighting, directional light, Tweakpane debug UI
+- **M5:** glTF model loading, auto camera framing, FPS counter
+- **M7:** Textured Moon with NASA color map, KTX2 texture pipeline
 
 ## What's Planned
 
-- **M5:** glTF model loading
-- **M6:** Fly controls (WASD + mouse look)
-- **Phase 2:** Compute shader shadows via ray casting
+- **M8:** Displacement mapping with NASA elevation data
+- **M9:** Compute shader shadows via ray casting
 
 ## Project Structure
 
@@ -59,17 +64,19 @@ src/
 ├── core/       # Viewer, Scene, Camera
 ├── objects/    # Object3D, Mesh, DirectionalLight
 ├── geometry/   # Geometry, primitives (cube, triangle)
-├── materials/  # SolidMaterial (Blinn-Phong)
+├── materials/  # SolidMaterial, TexturedMaterial
+├── loaders/    # GLTFLoader
 ├── controls/   # OrbitControls
-├── shaders/    # blinn-phong.wgsl
+├── shaders/    # blinn-phong.wgsl, textured-blinn-phong.wgsl
 └── types/      # TypeScript type definitions
 
 assets/
-├── models/     # Committed glTF/GLB files
-└── lunar/      # NASA Moon data (downloaded at build time)
+├── models/     # Committed glTF/GLB files (Duck, Utah Teapot)
+└── lunar/      # NASA Moon data (downloaded at build time, LFS for model)
 
 scripts/
-└── download-assets.sh  # Fetches external assets
+├── download-assets.sh        # Fetches NASA lunar textures
+└── convert-lunar-textures.sh # TIFF → PNG → KTX2 pipeline
 ```
 
 ## Testing
@@ -87,7 +94,9 @@ npm run test:e2e    # Full E2E suite
 | TypeScript 5.x | Strict mode, branded types |
 | Vite | Dev server, HMR, .wgsl imports |
 | wgpu-matrix | WebGPU-optimized matrix math |
+| @loaders.gl/gltf | glTF/GLB model parsing |
 | Tweakpane | Debug UI for parameters |
+| stats.js | FPS counter |
 | Vitest | Unit testing |
 | Playwright | E2E testing (Firefox + WebGPU) |
 
@@ -107,7 +116,7 @@ npm run test:e2e    # Full E2E suite
 - **Three.js-style API** — Familiar scene graph, meshes, materials
 - **Hybrid pipeline** — Rasterization + compute shaders (future)
 - **Reactive rendering** — Dirty-flag pattern, no wasted frames
-- **50K+ triangles** — Designed for real glTF models
+- **High-fidelity Moon** — 1M triangles, NASA imagery, displacement mapping (future)
 
 ## License
 

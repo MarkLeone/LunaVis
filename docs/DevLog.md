@@ -281,13 +281,153 @@ struct MaterialUniforms {
 
 ---
 
+### M5: glTF Loading ✓
+
+**Goal:** Load and display glTF/GLB models with automatic camera framing.
+
+**Completed:**
+- `GLTFLoader` class wrapping `@loaders.gl/gltf`:
+  - Parses .glb/.gltf files via `load()` + `postProcessGLTF()`
+  - Extracts positions, normals, indices from accessors
+  - Auto-generates flat normals when NORMAL attribute missing
+  - Uint16/Uint32 index format based on vertex count
+- stats.js FPS counter (top-left corner)
+- Model selection UI (Utah Teapot, Duck)
+- Bounding box calculation for loaded meshes
+- Auto camera positioning:
+  - Computes combined bounds across all primitives
+  - Positions camera at 2.5× model size along +Z axis
+  - Sets orbit target to model center
+- `OrbitControls.reset()` to sync after programmatic camera changes
+- Camera-following light (upper-left shoulder position):
+  - Computes camera-relative direction from view/up/right vectors
+  - Updates on every camera move for consistent illumination
+- `Scene.clear()` for model switching
+- Unit tests for camera positioning and OrbitControls sync
+
+**Files Created/Updated:**
+```
+src/
+├── loaders/GLTFLoader.ts     # New: glTF parsing + mesh extraction
+├── controls/OrbitControls.ts # Updated: reset() method
+├── core/Scene.ts             # Updated: clear() method
+└── main.ts                   # Updated: model selection, FPS, auto-framing
+assets/
+├── models/utah_teapot.glb    # 760KB, ~16K triangles
+├── models/Duck.glb           # 120KB, classic glTF test model
+└── CREDITS.md                # Asset attribution
+```
+
+**Dependencies Added:**
+- `@loaders.gl/core` — loader framework
+- `@loaders.gl/gltf` — glTF parser
+- `stats.js` — FPS counter
+
+**Technical Notes:**
+- Y-up coordinate system throughout (matches glTF spec)
+- Light direction computed as `-right*0.4 + camUp*0.4 + view*0.8` for upper-left shoulder effect
+- Model configs stored in `MODELS` map with path and default color
+
+**Verification:** Utah Teapot and Duck load and display with proper framing. E2E test passes.
+
+---
+
+### M6: Fly Controls (Skipped)
+
+M6 was deferred in favor of Moon rendering. Orbit controls sufficient for current use cases.
+
+---
+
+### M7: Textured Moon Rendering ✓
+
+**Goal:** Render textured Moon sphere with NASA color map.
+
+M7 was implemented across multiple commits building the asset pipeline and texture support.
+
+#### Asset Pipeline Setup
+
+**NASA Lunar Assets:**
+- Build-time asset download via `scripts/download-assets.sh`
+- Downloads NASA CGI Moon Kit from SVS (~120MB):
+  - `lroc_color_16bit_srgb_4k.tif` — 4K color map
+  - `ldem_16.tif` — displacement map (for future milestones)
+- Assets excluded from git via `.gitignore`
+- Attribution in `assets/lunar/README.md`
+
+**KTX2 Texture Conversion:**
+- `scripts/convert-lunar-textures.sh` (TIFF → PNG → KTX2)
+- Color map conversion:
+  - 16-bit sRGB TIFF → 8-bit PNG (ImageMagick)
+  - PNG → KTX2 with mipmaps + Zstd compression (ktx tool)
+  - Format: R8G8B8_SRGB for GPU sRGB linearization
+- Displacement map kept as TIFF for compute shader processing (future)
+
+**Moon Sphere Model:**
+- NASA CGI Moon Kit from Sketchfab (Thomas Flynn, CC-BY-4.0)
+- ~1M triangles, 516K vertices with UV coordinates
+- `scene.bin` tracked via Git LFS (75MB)
+- Bundled texture removed; uses converted `moon_color.ktx2`
+
+#### Texture Material Implementation
+
+**Completed:**
+- `TexturedMaterial` class with:
+  - GPUTexture + GPUSampler management
+  - Color multiplier, shininess, specularIntensity parameters
+  - Trilinear filtering with mipmap support
+  - 32-byte uniform buffer (color + shininess + specularIntensity + padding)
+- `textured-blinn-phong.wgsl` shader:
+  - UV attribute input (location 2)
+  - Texture sampling via `textureSample()`
+  - Blinn-Phong with controllable specular intensity
+  - `specularIntensity` uniform to disable specular (lunar regolith is purely diffuse)
+- Extended `Geometry` to support optional UV coordinates
+- Updated `GLTFLoader`:
+  - Extracts `TEXCOORD_0` attribute
+  - Loads images via loaders.gl
+  - Creates GPU textures with `createTextureFromImage()`
+  - Returns `TexturedMaterial` when texture available
+- Moon model config with `specularIntensity: 0`
+- Resolution cap at 2048px to prevent Firefox WebGPU crash on large displays
+- Background color changed to black
+
+**Files Created/Updated:**
+```
+src/
+├── materials/TexturedMaterial.ts     # New: textured Blinn-Phong material
+├── shaders/textured-blinn-phong.wgsl # New: UV sampling + lighting
+├── geometry/Geometry.ts              # Updated: optional uvs parameter
+├── loaders/GLTFLoader.ts             # Updated: TEXCOORD_0, image loading
+├── core/Viewer.ts                    # Updated: 2048px cap, black background
+├── objects/Mesh.ts                   # Updated: TexturedMaterial support
+└── main.ts                           # Updated: Moon model config
+assets/lunar/
+├── scene.gltf + scene.bin            # Moon sphere model (LFS)
+├── moon_color.ktx2                   # Converted color texture
+├── download.sh                       # NASA asset fetcher
+├── README.md                         # Attribution + format notes
+└── license.txt                       # CC-BY-4.0
+scripts/
+├── download-assets.sh                # Asset discovery + download
+└── convert-lunar-textures.sh         # TIFF→PNG→KTX2 pipeline
+```
+
+**Technical Notes:**
+- Specular disabled for Moon (`specularIntensity: 0`) — lunar regolith is a diffuse reflector
+- 8-bit sRGB sufficient for albedo textures; GPU linearizes on sample
+- Resolution cap prevents `VK_ERROR_OUT_OF_DEVICE_MEMORY` on high-DPI displays
+- KTX2 with Zstd compression reduces texture size while preserving quality
+
+**Verification:** Textured Moon renders with diffuse-only lighting. NASA color map displays correctly.
+
+---
+
 ## Upcoming
 
-### M5: glTF Loading (Next)
-- `GLTFLoader` class to parse .glb files
-- Extract positions, normals, indices from accessors
-- Load test model (Suzanne, Duck, etc.)
-- stats.js integration for FPS display
+### M8: Displacement Mapping (Next)
+- Load displacement map (ldem_16.tif)
+- Compute shader for mesh displacement
+- Normal recalculation
 
 ---
 
