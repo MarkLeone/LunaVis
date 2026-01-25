@@ -132,6 +132,47 @@ type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
 
 **Rationale:** Simple brute-force rendering is fast enough for most glTF models. BVH/spatial structures are needed for compute shadows (Phase 4+), not basic rendering.
 
+## CDLOD Terrain System
+
+### Spherified Cube Geometry
+
+**Decision:** Represent the Moon as a spherified cube (6 quad faces projected onto a sphere).
+
+**Rationale:** A spherified cube avoids polar singularities that plague latitude/longitude grids. Each face has uniform sampling density, and the quadtree subdivision maps naturally to the cube structure.
+
+### Quadtree Subdivision
+
+**Decision:** Lazy subdivision with object references (not pre-allocated flat array).
+
+**Rationale:** Nodes are created on demand during LOD selection and collapsed when no longer needed. This keeps memory proportional to visible detail. Object references make debugging easier than index arithmetic.
+
+### Double Precision for Node Bounds
+
+**Decision:** Store quadtree node positions using `Float64Array`.
+
+**Rationale:** At LOD 12+, patch sizes become ~0.00024 in UV space. Single-precision float32 would introduce visible jitter in bounding sphere calculations. Double precision maintains accuracy for the full 15-level depth.
+
+### Unit Sphere Coordinates
+
+**Decision:** Quadtree operates on unit sphere (radius=1), renderer applies planet radius.
+
+**Rationale:** Keeps the terrain system generic. The same quadtree code works for any celestial body by changing the radius uniform.
+
+### Cube Face Mapping
+
+**Decision:** Match right-handed Y-up coordinate system used throughout the codebase.
+
+```
+Face 0 (+Z): front (toward viewer)
+Face 1 (-Z): back
+Face 2 (+X): right
+Face 3 (-X): left
+Face 4 (+Y): top
+Face 5 (-Y): bottom
+```
+
+**Rationale:** Consistent with glTF and existing camera/scene conventions. No coordinate conversion needed.
+
 ## Future Considerations
 
 These decisions may need revisiting:

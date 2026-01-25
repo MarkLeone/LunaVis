@@ -13,6 +13,7 @@ LunaVis/
 │   ├── materials/      # SolidMaterial (Blinn-Phong)
 │   ├── loaders/        # glTF loader (M5)
 │   ├── controls/       # OrbitControls, FlyControls (M6)
+│   ├── terrain/        # CDLOD terrain system (M8+)
 │   ├── shaders/        # blinn-phong.wgsl, solid.wgsl
 │   ├── types/          # TypeScript type definitions
 │   └── main.ts         # Entry point + Tweakpane UI
@@ -196,6 +197,8 @@ type MeshId = string & { readonly __brand: 'MeshId' };
 type MaterialId = string & { readonly __brand: 'MaterialId' };
 type GeometryId = string & { readonly __brand: 'GeometryId' };
 type ObjectId = string & { readonly __brand: 'ObjectId' };
+type QuadNodeId = string & { readonly __brand: 'QuadNodeId' };
+type FaceId = 0 | 1 | 2 | 3 | 4 | 5;  // Cube face identifier
 ```
 
 Prevents accidentally passing a `MeshId` where a `MaterialId` is expected.
@@ -277,6 +280,69 @@ worldMatrix = parent.worldMatrix * localMatrix
 Matrices are cached and recomputed only when:
 - Local transform changes → `_matrixNeedsUpdate = true`
 - Parent world matrix changes → `_worldMatrixNeedsUpdate = true` (propagates to children)
+
+## CDLOD Terrain System
+
+### Class Structure
+
+```
+QuadTree
+├── roots[6]: QuadNode[]     # One root per cube face
+└── traverse(), collectLeaves(), getStats()
+
+QuadNode
+├── faceId: FaceId           # Which cube face (0-5)
+├── lodLevel: number         # Depth in tree (0 = root)
+├── origin: Float64Array     # UV position [u, v] (0-1 range)
+├── size: number             # Size in UV space
+├── children[4]: QuadNode[]  # SW, SE, NW, NE (lazy)
+├── boundingSphere           # For frustum culling (cached)
+└── subdivide(), collapse()
+```
+
+### Coordinate Mapping
+
+Each QuadNode stores UV coordinates (0-1) on its cube face. Conversion to 3D:
+
+```typescript
+// UV to cube direction (not normalized)
+uvToCubeDirection(u, v): Float64Array {
+  const uc = 2 * u - 1;  // Map 0..1 to -1..1
+  const vc = 2 * v - 1;
+  // Switch on faceId to get [x, y, z]
+}
+
+// Cube to sphere (spherified cube projection)
+normalizeToSphere(cubeDir): Float64Array {
+  return cubeDir / length(cubeDir);
+}
+```
+
+### Bounding Sphere Calculation
+
+Each node's bounding sphere encompasses its spherified patch:
+
+1. Compute patch center on unit sphere
+2. Sample 4 corners on sphere
+3. Find max distance from center to any corner
+4. Add 10% margin for surface curvature
+
+Bounding spheres are cached (computed once per node).
+
+### Child Layout
+
+```
++-------+-------+
+|  NW   |  NE   |  v + size
+| (2)   | (3)   |
++-------+-------+
+|  SW   |  SE   |  v
+| (0)   | (1)   |
++-------+-------+
+u      u+s/2   u+s
+```
+
+Children are created lazily via `subdivide()` and removed via `collapse()`.
 
 ## Lunar Texture Formats
 

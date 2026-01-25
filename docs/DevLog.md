@@ -422,12 +422,58 @@ scripts/
 
 ---
 
+## 2026-01-25: CDLOD Foundation
+
+### M8: Quadtree Data Structure ✓
+
+**Goal:** CPU-side quadtree representing spherified cube terrain for CDLOD.
+
+**Completed:**
+- `QuadNode` class with:
+  - UV coordinates on cube face (0-1 range)
+  - Double-precision storage (`Float64Array`) for LOD 12+ accuracy
+  - Bounding sphere calculation (cached)
+  - `subdivide()` / `collapse()` for lazy tree management
+  - `uvToCubeDirection()` + `normalizeToSphere()` for coordinate mapping
+- `QuadTree` class with:
+  - 6 root nodes (one per cube face)
+  - Traversal methods: `traverse()`, `traverseConditional()`, `collectLeaves()`
+  - Statistics: `getStats()` returns node counts, LOD histogram
+  - `reset()` to collapse tree to roots only
+- Branded types: `QuadNodeId`, `FaceId`
+- Comprehensive unit tests (38 tests)
+
+**Files Created:**
+```
+src/terrain/
+├── QuadNode.ts       # 290 lines — node with UV coords, bounding sphere
+└── QuadTree.ts       # 160 lines — 6-face tree manager
+src/types/index.ts    # Updated: QuadNodeId, FaceId
+tests/quadtree.test.ts # 38 tests for construction, traversal, precision
+```
+
+**Design Decisions:**
+- **Lazy subdivision:** Nodes created on demand during LOD selection
+- **Object references:** Traditional tree, not flat array (easier debugging)
+- **Unit sphere:** Quadtree uses radius=1, renderer applies planet scale
+- **Right-handed Y-up:** Cube faces match existing coordinate conventions
+
+**Technical Notes:**
+- Bounding sphere uses corner sampling + 10% margin for surface curvature
+- Child layout: SW(0), SE(1), NW(2), NE(3) — matches standard quadtree convention
+- MAX_LOD_LEVEL = 15 (supports ~0.00003 UV resolution)
+
+**Verification:** All 38 unit tests pass. Double precision verified at LOD 12+.
+
+---
+
 ## Upcoming
 
-### M8: Displacement Mapping (Next)
-- Load displacement map (ldem_16.tif)
-- Compute shader for mesh displacement
-- Normal recalculation
+### M9: LOD Selection & Frustum Culling (Next)
+- `Frustum` class with 6 plane extraction
+- Frustum-sphere intersection tests
+- `selectVisibleNodes()` with distance-based LOD metric
+- Relative-to-Eye (RTE) position calculation
 
 ---
 
