@@ -32,7 +32,9 @@ struct NodeData {
 
 struct TerrainConfig {
     maxLodLevel: u32,
-    _pad0: vec3<f32>,
+    _pad0: f32,
+    _pad1: f32,
+    _pad2: f32,
 }
 
 @group(0) @binding(0) var<uniform> global: GlobalUniforms;

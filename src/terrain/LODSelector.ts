@@ -53,6 +53,13 @@ export interface LODConfig {
    * Default: 0.8
    */
   morphRatio: number;
+
+  /**
+   * Use flat cube bounding spheres for frustum culling.
+   * Set to true for M11 flat cube rendering, false for spherified terrain.
+   * Default: true (M11)
+   */
+  useCubeBounds: boolean;
 }
 
 /**
@@ -72,6 +79,7 @@ const DEFAULT_CONFIG: LODConfig = {
   fov: Math.PI / 4, // 45 degrees
   maxLodLevel: 12,
   morphRatio: 0.8,
+  useCubeBounds: true, // M11 flat cube rendering
 };
 
 /**
@@ -220,7 +228,12 @@ export class LODSelector {
     // Update final stats
     this._stats.nodesSelected = results.length;
     if (results.length > 0) {
-      this._stats.maxLodLevel = Math.max(...results.map((n) => n.lodLevel));
+      // Avoid spread operator to prevent stack overflow with many nodes
+      let maxLod = 0;
+      for (const n of results) {
+        if (n.lodLevel > maxLod) maxLod = n.lodLevel;
+      }
+      this._stats.maxLodLevel = maxLod;
     }
 
     return results;
@@ -239,7 +252,9 @@ export class LODSelector {
 
     // 1. Frustum culling (early out)
     if (frustum) {
-      const sphere = node.boundingSphere;
+      const sphere = this._config.useCubeBounds
+        ? node.cubeBoundingSphere
+        : node.boundingSphere;
       if (!frustum.intersectsSphere(sphere.center, sphere.radius)) {
         this._stats.nodesCulled++;
         return; // Entire subtree culled

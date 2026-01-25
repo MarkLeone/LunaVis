@@ -26,7 +26,7 @@ const DEFAULT_CONFIG: TerrainDebugConfig = {
   showNodeBounds: false,
   disableCulling: false,
   maxPixelError: 4.0,
-  maxLodLevel: 12,
+  maxLodLevel: 4, // M11: Lower for flat cube testing (1536 nodes vs 164k with maxLodLevel=12)
 };
 
 export class TerrainRenderer {
@@ -296,13 +296,13 @@ export class TerrainRenderer {
 
     this.packNodeData(this.selectedNodes, renderNodeCount, this.cpuNodeBuffer);
 
-    this.device.queue.writeBuffer(
-      this.nodeBuffer!,
-      0,
-      this.cpuNodeBuffer,
-      0,
-      renderNodeCount * NODE_DATA_SIZE
+    // Create a view of just the data we need to write
+    const dataToWrite = new Float32Array(
+      this.cpuNodeBuffer.buffer,
+      this.cpuNodeBuffer.byteOffset,
+      renderNodeCount * NODE_DATA_FLOATS
     );
+    this.device.queue.writeBuffer(this.nodeBuffer!, 0, dataToWrite);
 
     const configData = new ArrayBuffer(16);
     const configU32 = new Uint32Array(configData);
@@ -375,7 +375,12 @@ export class TerrainRenderer {
 
     stats.nodesSelected = results.length;
     if (results.length > 0) {
-      stats.maxLodLevel = Math.max(...results.map((node) => node.lodLevel));
+      // Avoid spread operator to prevent stack overflow with many nodes
+      let maxLod = 0;
+      for (const node of results) {
+        if (node.lodLevel > maxLod) maxLod = node.lodLevel;
+      }
+      stats.maxLodLevel = maxLod;
     }
 
     return results;
@@ -390,7 +395,7 @@ export class TerrainRenderer {
     stats.nodesVisited++;
 
     if (frustum) {
-      const sphere = node.boundingSphere;
+      const sphere = node.cubeBoundingSphere; // Use cube bounds for M11 flat cube
       if (!frustum.intersectsSphere(sphere.center, sphere.radius)) {
         stats.nodesCulled++;
         return;

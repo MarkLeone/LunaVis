@@ -21,7 +21,7 @@ import { quadNodeId } from '@/types';
 
 /** Bounding sphere for frustum culling */
 export interface BoundingSphere {
-  /** Center point on unit sphere (double precision) */
+  /** Center point (double precision) */
   readonly center: Float64Array; // [x, y, z]
   /** Radius of bounding sphere */
   readonly radius: number;
@@ -76,8 +76,10 @@ export class QuadNode {
   /** Child nodes (null until subdivided) */
   private _children: [QuadNode, QuadNode, QuadNode, QuadNode] | null = null;
 
-  /** Cached bounding sphere */
+  /** Cached bounding sphere (for spherified cube) */
   private _boundingSphere: BoundingSphere | null = null;
+  /** Cached bounding sphere for flat cube (M11) */
+  private _cubeBoundingSphere: BoundingSphere | null = null;
   /** Cached center point on unit sphere */
   private _sphereCenter: Float64Array | null = null;
 
@@ -121,12 +123,20 @@ export class QuadNode {
     return this._sphereCenter;
   }
 
-  /** Bounding sphere for frustum culling (cached) */
+  /** Bounding sphere for frustum culling - spherified cube (cached) */
   get boundingSphere(): BoundingSphere {
     if (!this._boundingSphere) {
       this._boundingSphere = this.computeBoundingSphere();
     }
     return this._boundingSphere;
+  }
+
+  /** Bounding sphere for frustum culling - flat cube M11 (cached) */
+  get cubeBoundingSphere(): BoundingSphere {
+    if (!this._cubeBoundingSphere) {
+      this._cubeBoundingSphere = this.computeCubeBoundingSphere();
+    }
+    return this._cubeBoundingSphere;
   }
 
   /** Whether this node has children */
@@ -362,6 +372,54 @@ export class QuadNode {
 
     // Add 10% margin for curved surface bulge between corners
     const radius = Math.sqrt(maxDistSq) * 1.1;
+
+    return { center, radius };
+  }
+
+  /**
+   * Compute bounding sphere for flat cube rendering (M11).
+   *
+   * Unlike computeBoundingSphere(), this uses raw cube coordinates
+   * WITHOUT normalizing to unit sphere. Used for frustum culling
+   * when rendering flat cube faces.
+   */
+  private computeCubeBoundingSphere(): BoundingSphere {
+    const u = this._origin[0]!;
+    const v = this._origin[1]!;
+    const s = this._size;
+
+    // Get cube corners (not normalized)
+    const corners = [
+      this.uvToCubeDirection(u, v), // SW
+      this.uvToCubeDirection(u + s, v), // SE
+      this.uvToCubeDirection(u, v + s), // NW
+      this.uvToCubeDirection(u + s, v + s), // NE
+    ];
+
+    // Compute center as average of corners
+    let cx = 0, cy = 0, cz = 0;
+    for (const corner of corners) {
+      cx += corner[0]!;
+      cy += corner[1]!;
+      cz += corner[2]!;
+    }
+    cx /= 4;
+    cy /= 4;
+    cz /= 4;
+    const center = new Float64Array([cx, cy, cz]);
+
+    // Find maximum distance from center to any corner
+    let maxDistSq = 0;
+    for (const corner of corners) {
+      const dx = corner[0]! - cx;
+      const dy = corner[1]! - cy;
+      const dz = corner[2]! - cz;
+      const distSq = dx * dx + dy * dy + dz * dz;
+      maxDistSq = Math.max(maxDistSq, distSq);
+    }
+
+    // Add small margin for numerical precision
+    const radius = Math.sqrt(maxDistSq) * 1.01;
 
     return { center, radius };
   }
