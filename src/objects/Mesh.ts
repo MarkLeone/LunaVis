@@ -132,6 +132,34 @@ export class Mesh extends Object3D {
     pass.drawIndexed(indexCount);
   }
 
+  /**
+   * Render this mesh using a wireframe pipeline.
+   */
+  renderWireframe(
+    pass: GPURenderPassEncoder,
+    device: GPUDevice,
+    globalBindGroup: GPUBindGroup,
+    wireframeBindGroup: GPUBindGroup,
+    pipeline: GPURenderPipeline,
+    lineIndexBuffer: GPUBuffer,
+    lineIndexCount: number,
+    lineIndexFormat: GPUIndexFormat
+  ): void {
+    if (!this.geometryBuffers || !this.meshResources) {
+      throw new Error('Mesh GPU resources not created. Call createGPUResources() first.');
+    }
+
+    this.updateModelMatrix(device);
+
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, globalBindGroup);
+    pass.setBindGroup(1, wireframeBindGroup);
+    pass.setBindGroup(2, this.meshResources.modelBindGroup);
+    pass.setVertexBuffer(0, this.geometryBuffers.positionBuffer);
+    pass.setIndexBuffer(lineIndexBuffer, lineIndexFormat);
+    pass.drawIndexed(lineIndexCount);
+  }
+
   /** Check if GPU resources are ready */
   get isReady(): boolean {
     return this.geometryBuffers !== null &&

@@ -73,7 +73,7 @@ tests/
 - Console marker system for test verification:
   - Human-readable: `[LunaVis] Ready`
   - Machine-parseable: `{"event":"ready","version":"0.1.0"}`
-- Smoke test (~5s): verifies init, no errors, canvas rendered
+- Smoke test (~5s): verifies init, first frame, and CDLOD↔glTF model switch
 - E2E helpers: `captureConsole()`, `waitForEvent()`, `hasMarker()`
 
 **Node 19 Compatibility:**
@@ -103,7 +103,7 @@ See [BuildAndTest.md](BuildAndTest.md) for test commands and procedures.
 - `Viewer.addMesh()`/`removeMesh()` for scene management
 - `createTriangle()` primitive generator
 - Vite type declarations for `.wgsl?raw` imports
-- Updated smoke test to verify `mesh-created` event
+- Updated smoke test to verify ready/frame-rendered and model switch (CDLOD default)
 
 **Files Created:**
 ```

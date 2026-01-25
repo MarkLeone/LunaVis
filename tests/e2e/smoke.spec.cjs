@@ -11,16 +11,11 @@ const { test, expect } = require('@playwright/test');
 const { captureConsole, waitForEvent, hasMarker, getErrorMessages } = require('./helpers.cjs');
 
 test.describe('Smoke Test', () => {
-  test('LunaVis initializes and renders first frame', async ({ page }) => {
+  test('LunaVis initializes, renders, and switches render source', async ({ page }) => {
     const capture = captureConsole(page);
 
     // Navigate to the app
     await page.goto('/');
-
-    // Wait for mesh creation event
-    const meshEvent = await waitForEvent(page, capture, 'mesh-created', 5000);
-    expect(meshEvent.event).toBe('mesh-created');
-    expect(meshEvent.id).toMatch(/^mesh-/);
 
     // Wait for the ready event (app initialization complete)
     const readyEvent = await waitForEvent(page, capture, 'ready', 5000);
@@ -32,8 +27,12 @@ test.describe('Smoke Test', () => {
     const frameEvent = await waitForEvent(page, capture, 'frame-rendered', 5000);
     expect(frameEvent.event).toBe('frame-rendered');
 
+    // Toggle model to Mesh and back to CDLOD
+    const modelSelect = page.locator('select:has(option:has-text("CDLOD Sphere"))');
+    await modelSelect.selectOption('Utah Teapot');
+    await modelSelect.selectOption('CDLOD Sphere');
+
     // Verify human-readable markers
-    expect(hasMarker(capture, '[LunaVis] Mesh-created')).toBe(true);
     expect(hasMarker(capture, '[LunaVis] Ready')).toBe(true);
     expect(hasMarker(capture, '[LunaVis] Frame-rendered')).toBe(true);
 

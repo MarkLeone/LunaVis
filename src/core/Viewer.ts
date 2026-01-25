@@ -10,6 +10,7 @@ import type { Mesh } from '@/objects/Mesh';
 import type { Scene } from './Scene';
 import type { Camera } from './Camera';
 import type { DirectionalLight } from '@/objects/DirectionalLight';
+import type { RenderSource, RenderMode, FrameContext } from './RenderSource';
 
 type RenderOverride = (
   pass: GPURenderPassEncoder,
@@ -68,6 +69,8 @@ export class Viewer {
   private renderState: RenderState = { dirty: true, frameId: null };
   private disposed = false;
   private renderOverride: RenderOverride | null = null;
+  private renderSource: RenderSource | null = null;
+  private renderMode: RenderMode = 'solid';
 
   private scene: Scene | null = null;
   private camera: Camera | null = null;
@@ -329,6 +332,26 @@ export class Viewer {
   }
 
   /**
+   * Set the active render source (mesh, CDLOD, etc).
+   */
+  setRenderSource(source: RenderSource | null): void {
+    this.renderSource = source;
+    if (source) {
+      source.setRenderMode(this.renderMode);
+    }
+    this.requestRender();
+  }
+
+  /**
+   * Set render mode (solid or wireframe) for the active source.
+   */
+  setRenderMode(mode: RenderMode): void {
+    this.renderMode = mode;
+    this.renderSource?.setRenderMode(mode);
+    this.requestRender();
+  }
+
+  /**
    * Add a mesh to the scene and create its GPU resources.
    */
   addMesh(mesh: Mesh): void {
@@ -477,6 +500,21 @@ export class Viewer {
 
     if (this.renderOverride) {
       this.renderOverride(renderPass, device, this.globalResources.bindGroup);
+    } else if (this.renderSource) {
+      if (!this.camera) {
+        console.warn('[LunaVis] No camera set');
+      } else {
+        const frame: FrameContext = {
+          device,
+          globalBindGroup: this.globalResources.bindGroup,
+          pixelSize: this.pixelSize,
+          camera: this.camera,
+          light: this.light,
+          ambientColor: this._ambientColor,
+        };
+        this.renderSource.update(frame);
+        this.renderSource.render(renderPass, frame);
+      }
     } else {
       // Render all meshes in the scene
       if (this.scene) {

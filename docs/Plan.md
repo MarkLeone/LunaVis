@@ -325,7 +325,7 @@ LunaVis/
 **Tests:**
 - Geometry buffer creation
 - Primitive generation
-- E2E smoke test with mesh-created event
+- E2E smoke test with ready + frame-rendered events
 
 **Files:** `geometry/`, `materials/SolidMaterial.ts`, `objects/Mesh.ts`, `shaders/solid.wgsl`, `vite-env.d.ts`
 
@@ -953,14 +953,15 @@ Based on developer interview:
 **Goal:** Visual debugging tools to verify quadtree and LOD selection.
 
 **Deliverables:**
-- Wireframe rendering mode for quadtree patches
+- Solid CDLOD patch rendering (default) with wireframe mode for inspection
 - Color-coded by LOD level (0=red → 12=violet gradient)
 - Node count overlay: total nodes, visible nodes, per-level histogram
-- Tweakpane controls:
+- Model dropdown includes `CDLOD Sphere` (default) to switch between CDLOD and glTF
+- CDLOD controls:
   - `freezeLOD`: stop LOD updates (inspect current state)
   - `forceMaxLOD`: render all nodes at maximum detail
-  - `wireframeMode`: toggle wireframe rendering
   - `showNodeBounds`: render bounding spheres
+  - `disableCulling`: render all nodes regardless of frustum
 - Console logging of LOD distribution
 
 **Files:**
@@ -972,6 +973,31 @@ Based on developer interview:
 - Can visually verify LOD transitions occur at expected distances
 - Wireframe clearly shows patch boundaries
 - Node counts in UI match expected values for camera position
+
+**Testing:**
+- Manual: verify CDLOD solid view, toggle wireframe to freeze, and confirm overlay updates
+- E2E smoke test: ready + frame-rendered, switch model dropdown between `CDLOD Sphere` and a glTF model
+
+---
+
+### M10.5 — Render Source Decoupling + Global Wireframe
+
+**Goal:** Decouple geometry sources from the render loop and apply a global wireframe mode.
+
+**Deliverables:**
+- `RenderSource` interface with `update()` + `render()` and a shared `RenderMode`
+- `MeshRenderSource` (glTF meshes) + `CDLODRenderSource` (CDLOD patches)
+- Global wireframe toggle applied to the active render source
+- Model dropdown switches between CDLOD and glTF sources (no separate source selector)
+
+**Acceptance Criteria:**
+- Viewer renders via a single render source abstraction
+- Wireframe works for both Mesh and CDLOD sources
+- CDLOD renders solid by default and freezes selection in wireframe mode
+
+**Testing:**
+- Smoke test covers model switch (CDLOD ↔ glTF)
+- Manual: verify wireframe mode for both sources
 
 ---
 

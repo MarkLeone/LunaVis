@@ -49,10 +49,12 @@ export interface TerrainDebugConfig {
   freezeLOD: boolean;
   /** Force all nodes to maximum detail */
   forceMaxLOD: boolean;
-  /** Show wireframe (always true for debug) */
+  /** Show wireframe */
   wireframeMode: boolean;
   /** Show bounding spheres */
   showNodeBounds: boolean;
+  /** Disable frustum culling (render all visible by LOD) */
+  disableCulling: boolean;
   /** Maximum pixel error for LOD selection */
   maxPixelError: number;
   /** Maximum LOD level allowed */
@@ -72,8 +74,9 @@ export interface DebugRenderStats extends LODSelectionStats {
 const DEFAULT_DEBUG_CONFIG: TerrainDebugConfig = {
   freezeLOD: false,
   forceMaxLOD: false,
-  wireframeMode: true,
+  wireframeMode: false,
   showNodeBounds: false,
+  disableCulling: false,
   maxPixelError: 4.0,
   maxLodLevel: 12,
 };
@@ -91,9 +94,11 @@ export class DebugRenderer {
   private _gridMesh: DebugGridMeshData | null = null;
   private _vertexBuffer: GPUBuffer | null = null;
   private _indexBuffer: GPUBuffer | null = null;
+  private _solidIndexBuffer: GPUBuffer | null = null;
   private _nodeBuffer: GPUBuffer | null = null;
   private _configBuffer: GPUBuffer | null = null;
   private _pipeline: GPURenderPipeline | null = null;
+  private _solidPipeline: GPURenderPipeline | null = null;
   private _boundsPipeline: GPURenderPipeline | null = null;
   private _bindGroup: GPUBindGroup | null = null;
   private _bindGroupLayout: GPUBindGroupLayout | null = null;
@@ -199,6 +204,13 @@ export class DebugRenderer {
     });
     device.queue.writeBuffer(this._indexBuffer, 0, this._gridMesh.lineIndices);
 
+    this._solidIndexBuffer = device.createBuffer({
+      label: 'debug-grid-solid-indices',
+      size: this._gridMesh.triangleIndices.byteLength,
+      usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(this._solidIndexBuffer, 0, this._gridMesh.triangleIndices);
+
     // Create node data storage buffer (resizable)
     this._nodeBufferCapacity = 256;
     this._nodeBuffer = this.createNodeBuffer(this._nodeBufferCapacity);
@@ -265,6 +277,38 @@ export class DebugRenderer {
       },
       primitive: {
         topology: 'line-list',
+        cullMode: 'none',
+      },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
+
+    this._solidPipeline = device.createRenderPipeline({
+      label: 'debug-solid-pipeline',
+      layout: pipelineLayout,
+      vertex: {
+        module: shaderModule,
+        entryPoint: 'vs_main',
+        buffers: [
+          {
+            arrayStride: 8,
+            stepMode: 'vertex',
+            attributes: [
+              { format: 'float32x2', offset: 0, shaderLocation: 0 },
+            ],
+          },
+        ],
+      },
+      fragment: {
+        module: shaderModule,
+        entryPoint: 'fs_main',
+        targets: [{ format }],
+      },
+      primitive: {
+        topology: 'triangle-list',
         cullMode: 'none',
       },
       depthStencil: {
@@ -379,8 +423,10 @@ export class DebugRenderer {
     // Update LOD ranges if screen/FOV changed
     this._lodSelector.updateRanges(screenHeight, fov);
 
-    // Extract frustum from view-projection matrix
-    const frustum = Frustum.fromViewProjection(viewProjectionMatrix);
+    // Extract frustum unless culling is disabled
+    const frustum = this._config.disableCulling
+      ? null
+      : Frustum.fromViewProjection(viewProjectionMatrix);
 
     // Reset tree if forceMaxLOD changed (to rebuild at correct level)
     // Note: This is a simplification; proper implementation would track state
@@ -412,7 +458,7 @@ export class DebugRenderer {
    */
   private selectNodesRecursive(
     cameraPos: Float64Array,
-    frustum: Frustum
+    frustum: Frustum | null
   ): DebugNodeData[] {
     const results: DebugNodeData[] = [];
 
@@ -429,13 +475,15 @@ export class DebugRenderer {
   private selectNodeRecursive(
     node: QuadNode,
     cameraPos: Float64Array,
-    frustum: Frustum,
+    frustum: Frustum | null,
     results: DebugNodeData[]
   ): void {
     // Frustum culling
-    const sphere = node.boundingSphere;
-    if (!frustum.intersectsSphere(sphere.center, sphere.radius)) {
-      return;
+    if (frustum) {
+      const sphere = node.boundingSphere;
+      if (!frustum.intersectsSphere(sphere.center, sphere.radius)) {
+        return;
+      }
     }
 
     // Distance calculation
@@ -474,7 +522,7 @@ export class DebugRenderer {
    */
   private selectAllAtMaxLOD(
     cameraPos: Float64Array,
-    frustum: Frustum
+    frustum: Frustum | null
   ): DebugNodeData[] {
     const results: DebugNodeData[] = [];
 
@@ -491,13 +539,15 @@ export class DebugRenderer {
   private expandToMaxLOD(
     node: QuadNode,
     cameraPos: Float64Array,
-    frustum: Frustum,
+    frustum: Frustum | null,
     results: DebugNodeData[]
   ): void {
     // Frustum culling
-    const sphere = node.boundingSphere;
-    if (!frustum.intersectsSphere(sphere.center, sphere.radius)) {
-      return;
+    if (frustum) {
+      const sphere = node.boundingSphere;
+      if (!frustum.intersectsSphere(sphere.center, sphere.radius)) {
+        return;
+      }
     }
 
     if (node.lodLevel < this._config.maxLodLevel) {
@@ -565,8 +615,8 @@ export class DebugRenderer {
     if (
       !this._device ||
       !this._pipeline ||
-      this._selectedNodes.length === 0 ||
-      (!this._config.wireframeMode && !this._config.showNodeBounds)
+      !this._solidPipeline ||
+      this._selectedNodes.length === 0
     ) {
       return;
     }
@@ -615,7 +665,6 @@ export class DebugRenderer {
       this._lastStats.uploadTimeMs = uploadTime;
     }
 
-    // Draw wireframe patches
     if (this._config.wireframeMode) {
       renderPass.setPipeline(this._pipeline);
       renderPass.setBindGroup(0, globalBindGroup);
@@ -624,6 +673,19 @@ export class DebugRenderer {
       renderPass.setIndexBuffer(this._indexBuffer!, 'uint16');
       renderPass.drawIndexed(
         this._gridMesh!.lineIndices.length,
+        renderNodeCount,
+        0,
+        0,
+        0
+      );
+    } else {
+      renderPass.setPipeline(this._solidPipeline);
+      renderPass.setBindGroup(0, globalBindGroup);
+      renderPass.setBindGroup(1, this._bindGroup!);
+      renderPass.setVertexBuffer(0, this._vertexBuffer!);
+      renderPass.setIndexBuffer(this._solidIndexBuffer!, 'uint16');
+      renderPass.drawIndexed(
+        this._gridMesh!.triangleIndices.length,
         renderNodeCount,
         0,
         0,
@@ -690,6 +752,7 @@ export class DebugRenderer {
   dispose(): void {
     this._vertexBuffer?.destroy();
     this._indexBuffer?.destroy();
+    this._solidIndexBuffer?.destroy();
     this._nodeBuffer?.destroy();
     this._configBuffer?.destroy();
     this._boundsVertexBuffer?.destroy();

@@ -88,8 +88,6 @@ Opens Vite dev server at http://localhost:3000 (or next available port).
    - Adjust material color and shininess
 7. Console should show:
    ```
-   [LunaVis] Mesh-created
-   {"event":"mesh-created","version":"0.1.0","id":"mesh-..."}
    [LunaVis] Ready
    {"event":"ready","version":"0.1.0"}
    [LunaVis] Model-loaded
@@ -136,7 +134,9 @@ npm run test:smoke
 2. Page loads without JavaScript errors
 3. `[LunaVis] Ready` marker appears in console
 4. Structured event `{"event":"ready",...}` is logged
-5. Canvas has non-zero dimensions
+5. First frame rendered event logged
+6. Model switch via dropdown (CDLOD ↔ glTF)
+7. Canvas has non-zero dimensions
 
 **Note:** Opens a visible Firefox window briefly (WebGPU requires headed mode).
 

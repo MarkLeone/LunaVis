@@ -9,7 +9,10 @@ import { Camera } from '@/core/Camera';
 import { OrbitControls } from '@/controls/OrbitControls';
 import { DirectionalLight } from '@/objects/DirectionalLight';
 import { GLTFLoader } from '@/loaders/GLTFLoader';
-import { DebugRenderer, type TerrainDebugConfig } from '@/terrain/DebugRenderer';
+import type { TerrainDebugConfig, DebugRenderStats } from '@/terrain/DebugRenderer';
+import { MeshRenderSource } from '@/core/MeshRenderSource';
+import { CDLODRenderSource } from '@/terrain/CDLODRenderSource';
+import type { RenderMode, RenderSource } from '@/core/RenderSource';
 import { Pane } from 'tweakpane';
 import Stats from 'stats.js';
 import type { Mesh } from '@/objects/Mesh';
@@ -31,6 +34,10 @@ interface ModelConfig {
 
 /** Available models with display names and default colors */
 const MODELS: Record<string, ModelConfig> = {
+  'CDLOD Sphere': {
+    path: '',
+    color: [1.0, 1.0, 1.0, 1.0],
+  },
   'Utah Teapot': {
     path: '/models/utah_teapot.glb',
     color: [0.8, 0.6, 0.4, 1.0],
@@ -48,7 +55,7 @@ const MODELS: Record<string, ModelConfig> = {
 };
 
 /** Default model to load */
-const DEFAULT_MODEL = 'Utah Teapot';
+const DEFAULT_MODEL = 'CDLOD Sphere';
 
 /**
  * Emit a structured event for test verification.
@@ -96,13 +103,11 @@ interface AppState {
   loader: GLTFLoader;
   currentMeshes: Mesh[];
   currentModel: string;
-  debug: {
-    enabled: boolean;
-    frozenCamera: Camera | null;
-    renderer: DebugRenderer;
-    globalUniformBuffer: GPUBuffer | null;
-    globalBindGroup: GPUBindGroup | null;
-  };
+  renderMode: RenderMode;
+  activeSource: RenderSource;
+  meshSource: MeshRenderSource;
+  cdlodSource: CDLODRenderSource;
+  overlay: DebugOverlay | null;
 }
 
 /**
@@ -146,19 +151,6 @@ function updateLightFromCamera(camera: Camera, light: DirectionalLight): void {
   light.setDirection(lx / lLen, ly / lLen, lz / lLen);
 }
 
-function buildGlobalUniformData(
-  camera: Camera,
-  light: DirectionalLight,
-  ambientColor: Color
-): Float32Array {
-  const uniformData = new Float32Array(32);
-  uniformData.set(camera.viewProjectionMatrix as Float32Array, 0);
-  uniformData.set(camera.position as Float32Array, 16);
-  uniformData.set(light.direction as Float32Array, 20);
-  uniformData.set(light.effectiveColor as Float32Array, 24);
-  uniformData.set(ambientColor.slice(0, 3), 28);
-  return uniformData;
-}
 
 /** Bounding box result */
 interface BoundingBox {
@@ -210,6 +202,17 @@ async function loadModel(state: AppState, modelName: string): Promise<Mesh[]> {
   const modelConfig = MODELS[modelName];
   if (!modelConfig) {
     throw new Error(`Unknown model: ${modelName}`);
+  }
+
+  if (modelName === 'CDLOD Sphere') {
+    state.scene.clear();
+    state.currentMeshes = [];
+    state.camera.setPosition(0, 0, 3);
+    state.camera.setTarget(0, 0, 0);
+    state.controls.reset([0, 0, 0]);
+    updateLightFromCamera(state.camera, state.light);
+    state.viewer.requestRender();
+    return [];
   }
 
   // Clear existing meshes
@@ -347,6 +350,18 @@ async function main(): Promise<void> {
     const loader = new GLTFLoader();
 
     // Application state
+    const meshSource = new MeshRenderSource(
+      scene,
+      viewer.context.device,
+      viewer.context.format,
+      viewer.globalBindGroupLayout
+    );
+    const cdlodSource = new CDLODRenderSource(
+      viewer.context.device,
+      viewer.context.format,
+      viewer.globalBindGroupLayout
+    );
+
     const state: AppState = {
       viewer,
       scene,
@@ -356,39 +371,17 @@ async function main(): Promise<void> {
       loader,
       currentMeshes: [],
       currentModel: DEFAULT_MODEL,
-      debug: {
-        enabled: false,
-        frozenCamera: null,
-        renderer: new DebugRenderer(),
-        globalUniformBuffer: null,
-        globalBindGroup: null,
-      },
+      renderMode: 'solid',
+      activeSource: cdlodSource,
+      meshSource,
+      cdlodSource,
+      overlay: null,
     };
 
     // Load initial model
     const meshes = await loadModel(state, DEFAULT_MODEL);
 
-    // Initialize terrain debug renderer (lazy GPU setup)
-    state.debug.renderer.init(
-      viewer.context.device,
-      viewer.context.format,
-      viewer.globalBindGroupLayout
-    );
-
-    state.debug.globalUniformBuffer = viewer.context.device.createBuffer({
-      label: 'debug-global-uniforms',
-      size: 128,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
-    state.debug.globalBindGroup = viewer.context.device.createBindGroup({
-      label: 'debug-global-bindGroup',
-      layout: viewer.globalBindGroupLayout,
-      entries: [{
-        binding: 0,
-        resource: { buffer: state.debug.globalUniformBuffer },
-      }],
-    });
+    viewer.setRenderSource(state.activeSource);
 
     // Set up debug UI
     setupDebugUI(state);
@@ -437,9 +430,39 @@ function setupDebugUI(state: AppState): void {
     const modelName = ev.value;
     if (modelName !== state.currentModel) {
       try {
-        await loadModel(state, modelName);
-        // Update material folder with new mesh
-        updateMaterialFolder(state);
+        if (modelName === 'CDLOD Sphere') {
+          state.activeSource = state.cdlodSource;
+          state.viewer.setRenderSource(state.activeSource);
+          state.overlay ??= createDebugOverlay();
+          state.cdlodSource.setOverlayCallback((stats) => {
+            if (!state.overlay) return;
+            if (!stats) {
+              state.overlay.update('No debug stats yet.');
+              return;
+            }
+            const histogram = stats.nodesPerLevel
+              .map((count, level) => `L${level}:${count}`)
+              .join(' ');
+            const text = [
+              `Nodes: ${stats.nodesSelected} (visited ${stats.nodesVisited}, culled ${stats.nodesCulled})`,
+              `Levels: ${histogram || 'none'}`,
+              `Selection: ${stats.selectionTimeMs.toFixed(2)} ms`,
+              `Upload: ${stats.uploadTimeMs.toFixed(2)} ms`,
+            ].join('\n');
+            state.overlay.update(text);
+          });
+          state.viewer.requestRender();
+        } else {
+          await loadModel(state, modelName);
+          state.activeSource = state.meshSource;
+          state.viewer.setRenderSource(state.activeSource);
+          state.cdlodSource.setOverlayCallback(null);
+          state.overlay?.remove();
+          state.overlay = null;
+          // Update material folder with new mesh
+          updateMaterialFolder(state);
+        }
+        state.currentModel = modelName;
       } catch (err) {
         console.error('Failed to load model:', err);
       }
@@ -511,7 +534,8 @@ function setupDebugUI(state: AppState): void {
   (state as AppState & { materialFolder: typeof materialFolder }).materialFolder = materialFolder;
   setupMaterialBindings(state, materialFolder);
 
-  setupTerrainDebugUI(state, pane);
+  setupRenderSourceUI(state, pane);
+  setupCDLODDebugUI(state, pane);
 }
 
 /**
@@ -602,20 +626,16 @@ function createDebugOverlay(): DebugOverlay {
   };
 }
 
-function setupTerrainDebugUI(state: AppState, pane: Pane): void {
-  const debugFolder = pane.addFolder({ title: 'Terrain Debug' });
-  const debugConfig: TerrainDebugConfig & { enabled: boolean } = {
-    enabled: false,
-    ...state.debug.renderer.config,
+function setupRenderSourceUI(state: AppState, pane: Pane): void {
+  const renderFolder = pane.addFolder({ title: 'Render' });
+  const renderParams = {
+    wireframe: false,
   };
 
-  const overlayState: { overlay: DebugOverlay | null } = { overlay: null };
-
-  const updateOverlay = (): void => {
-    if (!overlayState.overlay) return;
-    const stats = state.debug.renderer.lastStats;
+  const updateOverlay = (stats: DebugRenderStats | null): void => {
+    if (!state.overlay) return;
     if (!stats) {
-      overlayState.overlay.update('No debug stats yet.');
+      state.overlay.update('No debug stats yet.');
       return;
     }
 
@@ -630,111 +650,71 @@ function setupTerrainDebugUI(state: AppState, pane: Pane): void {
       `Upload: ${stats.uploadTimeMs.toFixed(2)} ms`,
     ].join('\n');
 
-    overlayState.overlay.update(text);
+    state.overlay.update(text);
   };
 
-  const captureDebugCamera = (): Camera => {
-    const src = state.camera;
-    const frozen = new Camera({ fov: src.fov, near: src.near, far: src.far });
-    frozen.aspect = src.aspect;
-    frozen.setPosition(src.position[0]!, src.position[1]!, src.position[2]!);
-    frozen.setTarget(src.target[0]!, src.target[1]!, src.target[2]!);
-    return frozen;
-  };
-
-  const applyDebugMode = (): void => {
-    if (!debugConfig.enabled) {
-      state.debug.enabled = false;
-      state.debug.frozenCamera = null;
-      state.viewer.setRenderOverride(null);
-      overlayState.overlay?.remove();
-      overlayState.overlay = null;
-      state.viewer.requestRender();
+  const setOverlayEnabled = (enabled: boolean): void => {
+    if (enabled && !state.overlay) {
+      state.overlay = createDebugOverlay();
+      state.cdlodSource.setOverlayCallback(updateOverlay);
       return;
     }
-
-    state.debug.enabled = true;
-    state.debug.frozenCamera = captureDebugCamera();
-    overlayState.overlay = createDebugOverlay();
-    state.debug.renderer.setConfig({
-      freezeLOD: debugConfig.freezeLOD,
-      forceMaxLOD: debugConfig.forceMaxLOD,
-      wireframeMode: debugConfig.wireframeMode,
-      showNodeBounds: debugConfig.showNodeBounds,
-      maxPixelError: debugConfig.maxPixelError,
-      maxLodLevel: debugConfig.maxLodLevel,
-    });
-
-    state.viewer.setRenderOverride((renderPass, device, globalBindGroup) => {
-      void globalBindGroup;
-      const debugCamera = state.debug.frozenCamera;
-      const debugBindGroup = state.debug.globalBindGroup;
-      const debugUniforms = state.debug.globalUniformBuffer;
-      if (!debugCamera || !debugBindGroup || !debugUniforms) return;
-
-      const { width, height } = state.viewer.pixelSize;
-      debugCamera.updateAspect(width, height);
-
-      const cameraPos = new Float64Array([
-        debugCamera.position[0]!,
-        debugCamera.position[1]!,
-        debugCamera.position[2]!,
-      ]);
-
-      const viewProjection = debugCamera.viewProjectionMatrix as Float32Array;
-      state.debug.renderer.selectNodes(cameraPos, viewProjection, height, debugCamera.fov);
-      const uniformData = buildGlobalUniformData(
-        debugCamera,
-        state.light,
-        state.viewer.ambientColor
-      );
-      device.queue.writeBuffer(debugUniforms, 0, uniformData as unknown as ArrayBuffer);
-
-      state.debug.renderer.render(renderPass, debugBindGroup);
-      updateOverlay();
-    });
-
-    state.viewer.requestRender();
+    if (!enabled && state.overlay) {
+      state.overlay.remove();
+      state.overlay = null;
+      state.cdlodSource.setOverlayCallback(null);
+    }
   };
 
-  debugFolder.addBinding(debugConfig, 'enabled', { label: 'Enabled' })
-    .on('change', () => {
-      applyDebugMode();
+  renderFolder.addBinding(renderParams, 'wireframe', { label: 'Wireframe' })
+    .on('change', (ev) => {
+      state.renderMode = ev.value ? 'wireframe' : 'solid';
+      state.viewer.setRenderMode(state.renderMode);
     });
+
+  setOverlayEnabled(state.activeSource.name === 'CDLOD');
+  state.viewer.setRenderSource(state.activeSource);
+}
+
+function setupCDLODDebugUI(state: AppState, pane: Pane): void {
+  const debugFolder = pane.addFolder({ title: 'CDLOD' });
+  const debugConfig: TerrainDebugConfig = {
+    ...state.cdlodSource.getConfig(),
+  };
 
   debugFolder.addBinding(debugConfig, 'freezeLOD', { label: 'Freeze LOD' })
     .on('change', () => {
-      state.debug.renderer.setConfig({ freezeLOD: debugConfig.freezeLOD });
+      state.cdlodSource.setConfig({ freezeLOD: debugConfig.freezeLOD });
       state.viewer.requestRender();
     });
 
   debugFolder.addBinding(debugConfig, 'forceMaxLOD', { label: 'Force Max LOD' })
     .on('change', () => {
-      state.debug.renderer.setConfig({ forceMaxLOD: debugConfig.forceMaxLOD });
-      state.viewer.requestRender();
-    });
-
-  debugFolder.addBinding(debugConfig, 'wireframeMode', { label: 'Wireframe' })
-    .on('change', () => {
-      state.debug.renderer.setConfig({ wireframeMode: debugConfig.wireframeMode });
+      state.cdlodSource.setConfig({ forceMaxLOD: debugConfig.forceMaxLOD });
       state.viewer.requestRender();
     });
 
   debugFolder.addBinding(debugConfig, 'showNodeBounds', { label: 'Bounds' })
     .on('change', () => {
-      state.debug.renderer.setConfig({ showNodeBounds: debugConfig.showNodeBounds });
+      state.cdlodSource.setConfig({ showNodeBounds: debugConfig.showNodeBounds });
+      state.viewer.requestRender();
+    });
+
+  debugFolder.addBinding(debugConfig, 'disableCulling', { label: 'Disable Culling' })
+    .on('change', () => {
+      state.cdlodSource.setConfig({ disableCulling: debugConfig.disableCulling });
       state.viewer.requestRender();
     });
 
   debugFolder.addBinding(debugConfig, 'maxPixelError', { min: 1, max: 12, step: 0.5, label: 'Pixel Error' })
     .on('change', () => {
-      state.debug.renderer.setConfig({ maxPixelError: debugConfig.maxPixelError });
+      state.cdlodSource.setConfig({ maxPixelError: debugConfig.maxPixelError });
       state.viewer.requestRender();
     });
 
   debugFolder.addBinding(debugConfig, 'maxLodLevel', { min: 0, max: 15, step: 1, label: 'Max LOD' })
     .on('change', () => {
-      state.debug.renderer.setConfig({ maxLodLevel: debugConfig.maxLodLevel });
+      state.cdlodSource.setConfig({ maxLodLevel: debugConfig.maxLodLevel });
       state.viewer.requestRender();
     });
 }

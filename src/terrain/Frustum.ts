@@ -106,7 +106,7 @@ export class Frustum {
     // Right:  row3 - row0
     // Bottom: row3 + row1
     // Top:    row3 - row1
-    // Near:   row3 + row2 (WebGPU uses [0,1] depth, but extraction still works)
+    // Near:   row2 (WebGPU clip space z in [0,1])
     // Far:    row3 - row2
 
     const planes: [
@@ -125,8 +125,8 @@ export class Frustum {
       Frustum.normalizePlane(m3 + m1, m7 + m5, m11 + m9, m15 + m13),
       // Top: row3 - row1
       Frustum.normalizePlane(m3 - m1, m7 - m5, m11 - m9, m15 - m13),
-      // Near: row3 + row2
-      Frustum.normalizePlane(m3 + m2, m7 + m6, m11 + m10, m15 + m14),
+      // Near: row2
+      Frustum.normalizePlane(m2, m6, m10, m14),
       // Far: row3 - row2
       Frustum.normalizePlane(m3 - m2, m7 - m6, m11 - m10, m15 - m14),
     ];
