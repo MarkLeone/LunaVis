@@ -9,6 +9,7 @@ import { Camera } from '@/core/Camera';
 import { OrbitControls } from '@/controls/OrbitControls';
 import { DirectionalLight } from '@/objects/DirectionalLight';
 import { GLTFLoader } from '@/loaders/GLTFLoader';
+import { DebugRenderer, type TerrainDebugConfig } from '@/terrain/DebugRenderer';
 import { Pane } from 'tweakpane';
 import Stats from 'stats.js';
 import type { Mesh } from '@/objects/Mesh';
@@ -95,6 +96,13 @@ interface AppState {
   loader: GLTFLoader;
   currentMeshes: Mesh[];
   currentModel: string;
+  debug: {
+    enabled: boolean;
+    frozenCamera: Camera | null;
+    renderer: DebugRenderer;
+    globalUniformBuffer: GPUBuffer | null;
+    globalBindGroup: GPUBindGroup | null;
+  };
 }
 
 /**
@@ -136,6 +144,20 @@ function updateLightFromCamera(camera: Camera, light: DirectionalLight): void {
   // Normalize and set (light direction points toward scene)
   const lLen = Math.sqrt(lx * lx + ly * ly + lz * lz);
   light.setDirection(lx / lLen, ly / lLen, lz / lLen);
+}
+
+function buildGlobalUniformData(
+  camera: Camera,
+  light: DirectionalLight,
+  ambientColor: Color
+): Float32Array {
+  const uniformData = new Float32Array(32);
+  uniformData.set(camera.viewProjectionMatrix as Float32Array, 0);
+  uniformData.set(camera.position as Float32Array, 16);
+  uniformData.set(light.direction as Float32Array, 20);
+  uniformData.set(light.effectiveColor as Float32Array, 24);
+  uniformData.set(ambientColor.slice(0, 3), 28);
+  return uniformData;
 }
 
 /** Bounding box result */
@@ -334,10 +356,39 @@ async function main(): Promise<void> {
       loader,
       currentMeshes: [],
       currentModel: DEFAULT_MODEL,
+      debug: {
+        enabled: false,
+        frozenCamera: null,
+        renderer: new DebugRenderer(),
+        globalUniformBuffer: null,
+        globalBindGroup: null,
+      },
     };
 
     // Load initial model
     const meshes = await loadModel(state, DEFAULT_MODEL);
+
+    // Initialize terrain debug renderer (lazy GPU setup)
+    state.debug.renderer.init(
+      viewer.context.device,
+      viewer.context.format,
+      viewer.globalBindGroupLayout
+    );
+
+    state.debug.globalUniformBuffer = viewer.context.device.createBuffer({
+      label: 'debug-global-uniforms',
+      size: 128,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    state.debug.globalBindGroup = viewer.context.device.createBindGroup({
+      label: 'debug-global-bindGroup',
+      layout: viewer.globalBindGroupLayout,
+      entries: [{
+        binding: 0,
+        resource: { buffer: state.debug.globalUniformBuffer },
+      }],
+    });
 
     // Set up debug UI
     setupDebugUI(state);
@@ -459,6 +510,8 @@ function setupDebugUI(state: AppState): void {
   const materialFolder = pane.addFolder({ title: 'Material' });
   (state as AppState & { materialFolder: typeof materialFolder }).materialFolder = materialFolder;
   setupMaterialBindings(state, materialFolder);
+
+  setupTerrainDebugUI(state, pane);
 }
 
 /**
@@ -512,6 +565,176 @@ function setupMaterialBindings(
   folder.addBinding(materialParams, 'shininess', { min: 1, max: 256, label: 'Shininess' })
     .on('change', () => {
       material.shininess = materialParams.shininess;
+      state.viewer.requestRender();
+    });
+}
+
+interface DebugOverlay {
+  element: HTMLDivElement;
+  update: (text: string) => void;
+  remove: () => void;
+}
+
+function createDebugOverlay(): DebugOverlay {
+  const element = document.createElement('div');
+  element.style.position = 'absolute';
+  element.style.left = '0px';
+  element.style.bottom = '0px';
+  element.style.padding = '8px 10px';
+  element.style.background = 'rgba(0, 0, 0, 0.6)';
+  element.style.color = '#e6edf3';
+  element.style.fontFamily = 'monospace';
+  element.style.fontSize = '12px';
+  element.style.lineHeight = '1.4';
+  element.style.pointerEvents = 'none';
+  element.style.whiteSpace = 'pre';
+  element.style.zIndex = '10';
+  document.body.appendChild(element);
+
+  return {
+    element,
+    update: (text: string) => {
+      element.textContent = text;
+    },
+    remove: () => {
+      element.remove();
+    },
+  };
+}
+
+function setupTerrainDebugUI(state: AppState, pane: Pane): void {
+  const debugFolder = pane.addFolder({ title: 'Terrain Debug' });
+  const debugConfig: TerrainDebugConfig & { enabled: boolean } = {
+    enabled: false,
+    ...state.debug.renderer.config,
+  };
+
+  const overlayState: { overlay: DebugOverlay | null } = { overlay: null };
+
+  const updateOverlay = (): void => {
+    if (!overlayState.overlay) return;
+    const stats = state.debug.renderer.lastStats;
+    if (!stats) {
+      overlayState.overlay.update('No debug stats yet.');
+      return;
+    }
+
+    const histogram = stats.nodesPerLevel
+      .map((count, level) => `L${level}:${count}`)
+      .join(' ');
+
+    const text = [
+      `Nodes: ${stats.nodesSelected} (visited ${stats.nodesVisited}, culled ${stats.nodesCulled})`,
+      `Levels: ${histogram || 'none'}`,
+      `Selection: ${stats.selectionTimeMs.toFixed(2)} ms`,
+      `Upload: ${stats.uploadTimeMs.toFixed(2)} ms`,
+    ].join('\n');
+
+    overlayState.overlay.update(text);
+  };
+
+  const captureDebugCamera = (): Camera => {
+    const src = state.camera;
+    const frozen = new Camera({ fov: src.fov, near: src.near, far: src.far });
+    frozen.aspect = src.aspect;
+    frozen.setPosition(src.position[0]!, src.position[1]!, src.position[2]!);
+    frozen.setTarget(src.target[0]!, src.target[1]!, src.target[2]!);
+    return frozen;
+  };
+
+  const applyDebugMode = (): void => {
+    if (!debugConfig.enabled) {
+      state.debug.enabled = false;
+      state.debug.frozenCamera = null;
+      state.viewer.setRenderOverride(null);
+      overlayState.overlay?.remove();
+      overlayState.overlay = null;
+      state.viewer.requestRender();
+      return;
+    }
+
+    state.debug.enabled = true;
+    state.debug.frozenCamera = captureDebugCamera();
+    overlayState.overlay = createDebugOverlay();
+    state.debug.renderer.setConfig({
+      freezeLOD: debugConfig.freezeLOD,
+      forceMaxLOD: debugConfig.forceMaxLOD,
+      wireframeMode: debugConfig.wireframeMode,
+      showNodeBounds: debugConfig.showNodeBounds,
+      maxPixelError: debugConfig.maxPixelError,
+      maxLodLevel: debugConfig.maxLodLevel,
+    });
+
+    state.viewer.setRenderOverride((renderPass, device, globalBindGroup) => {
+      void globalBindGroup;
+      const debugCamera = state.debug.frozenCamera;
+      const debugBindGroup = state.debug.globalBindGroup;
+      const debugUniforms = state.debug.globalUniformBuffer;
+      if (!debugCamera || !debugBindGroup || !debugUniforms) return;
+
+      const { width, height } = state.viewer.pixelSize;
+      debugCamera.updateAspect(width, height);
+
+      const cameraPos = new Float64Array([
+        debugCamera.position[0]!,
+        debugCamera.position[1]!,
+        debugCamera.position[2]!,
+      ]);
+
+      const viewProjection = debugCamera.viewProjectionMatrix as Float32Array;
+      state.debug.renderer.selectNodes(cameraPos, viewProjection, height, debugCamera.fov);
+      const uniformData = buildGlobalUniformData(
+        debugCamera,
+        state.light,
+        state.viewer.ambientColor
+      );
+      device.queue.writeBuffer(debugUniforms, 0, uniformData as unknown as ArrayBuffer);
+
+      state.debug.renderer.render(renderPass, debugBindGroup);
+      updateOverlay();
+    });
+
+    state.viewer.requestRender();
+  };
+
+  debugFolder.addBinding(debugConfig, 'enabled', { label: 'Enabled' })
+    .on('change', () => {
+      applyDebugMode();
+    });
+
+  debugFolder.addBinding(debugConfig, 'freezeLOD', { label: 'Freeze LOD' })
+    .on('change', () => {
+      state.debug.renderer.setConfig({ freezeLOD: debugConfig.freezeLOD });
+      state.viewer.requestRender();
+    });
+
+  debugFolder.addBinding(debugConfig, 'forceMaxLOD', { label: 'Force Max LOD' })
+    .on('change', () => {
+      state.debug.renderer.setConfig({ forceMaxLOD: debugConfig.forceMaxLOD });
+      state.viewer.requestRender();
+    });
+
+  debugFolder.addBinding(debugConfig, 'wireframeMode', { label: 'Wireframe' })
+    .on('change', () => {
+      state.debug.renderer.setConfig({ wireframeMode: debugConfig.wireframeMode });
+      state.viewer.requestRender();
+    });
+
+  debugFolder.addBinding(debugConfig, 'showNodeBounds', { label: 'Bounds' })
+    .on('change', () => {
+      state.debug.renderer.setConfig({ showNodeBounds: debugConfig.showNodeBounds });
+      state.viewer.requestRender();
+    });
+
+  debugFolder.addBinding(debugConfig, 'maxPixelError', { min: 1, max: 12, step: 0.5, label: 'Pixel Error' })
+    .on('change', () => {
+      state.debug.renderer.setConfig({ maxPixelError: debugConfig.maxPixelError });
+      state.viewer.requestRender();
+    });
+
+  debugFolder.addBinding(debugConfig, 'maxLodLevel', { min: 0, max: 15, step: 1, label: 'Max LOD' })
+    .on('change', () => {
+      state.debug.renderer.setConfig({ maxLodLevel: debugConfig.maxLodLevel });
       state.viewer.requestRender();
     });
 }

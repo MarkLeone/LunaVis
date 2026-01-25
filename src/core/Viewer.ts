@@ -11,6 +11,12 @@ import type { Scene } from './Scene';
 import type { Camera } from './Camera';
 import type { DirectionalLight } from '@/objects/DirectionalLight';
 
+type RenderOverride = (
+  pass: GPURenderPassEncoder,
+  device: GPUDevice,
+  globalBindGroup: GPUBindGroup
+) => void;
+
 /** Default clear color: Cornflower Blue (#6495ED) */
 const DEFAULT_CLEAR_COLOR: Color = [0, 0, 0, 1.0];
 
@@ -61,6 +67,7 @@ export class Viewer {
   private resizeObserver: ResizeObserver | null = null;
   private renderState: RenderState = { dirty: true, frameId: null };
   private disposed = false;
+  private renderOverride: RenderOverride | null = null;
 
   private scene: Scene | null = null;
   private camera: Camera | null = null;
@@ -314,6 +321,14 @@ export class Viewer {
   }
 
   /**
+   * Override the default mesh rendering path (used by debug tools).
+   */
+  setRenderOverride(override: RenderOverride | null): void {
+    this.renderOverride = override;
+    this.requestRender();
+  }
+
+  /**
    * Add a mesh to the scene and create its GPU resources.
    */
   addMesh(mesh: Mesh): void {
@@ -460,21 +475,25 @@ export class Viewer {
       },
     });
 
-    // Render all meshes in the scene
-    if (this.scene) {
-      const meshes = this.scene.getMeshes();
-      if (meshes.length === 0) {
-        console.warn('[LunaVis] No meshes in scene');
-      }
-      for (const mesh of meshes) {
-        if (mesh.isReady) {
-          mesh.render(renderPass, device, this.globalResources.bindGroup);
-        } else {
-          console.warn('[LunaVis] Mesh not ready:', mesh.meshId);
-        }
-      }
+    if (this.renderOverride) {
+      this.renderOverride(renderPass, device, this.globalResources.bindGroup);
     } else {
-      console.warn('[LunaVis] No scene set');
+      // Render all meshes in the scene
+      if (this.scene) {
+        const meshes = this.scene.getMeshes();
+        if (meshes.length === 0) {
+          console.warn('[LunaVis] No meshes in scene');
+        }
+        for (const mesh of meshes) {
+          if (mesh.isReady) {
+            mesh.render(renderPass, device, this.globalResources.bindGroup);
+          } else {
+            console.warn('[LunaVis] Mesh not ready:', mesh.meshId);
+          }
+        }
+      } else {
+        console.warn('[LunaVis] No scene set');
+      }
     }
 
     renderPass.end();

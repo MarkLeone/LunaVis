@@ -211,6 +211,14 @@ Face 5 (-Y): bottom
 
 **Rationale:** Consistent with glTF and existing camera/scene conventions. No coordinate conversion needed.
 
+### Debug Visualization (M10)
+
+**Decision:** Use an exclusive debug render mode with a frozen camera.
+
+**Rationale:** The debug view is intended for CDLOD inspection, not scene composition. Replacing the normal model render avoids depth conflicts, and freezing the camera at toggle time makes LOD transitions reproducible for inspection.
+
+**Debug UI:** Tweakpane controls enable/disable, freeze LOD, force max LOD, wireframe toggle, bounds toggle, max pixel error, and max LOD level. A lightweight DOM overlay shows node counts and per-level histogram.
+
 ## glTF Loading (M5)
 
 ### Loader Library

@@ -54,6 +54,7 @@ Viewer
 ├── Camera (position, target → view/projection matrices)
 ├── DirectionalLight (direction, color, intensity)
 └── OrbitControls (spherical coords → camera updates)
+└── DebugRenderer (terrain debug via render override)
 
 GLTFLoader
 ├── load(url) → GLTFLoadResult { meshes, textures }
@@ -67,6 +68,7 @@ GLTFLoader
 3. `OrbitControls` updates `Camera` position/target
 4. Camera/control changes call `Viewer.requestRender()`
 5. `renderLoop()` writes uniforms and issues draw calls
+6. Optional render override can replace mesh rendering
 
 ## Coordinate System
 
@@ -152,21 +154,48 @@ renderLoop()
     ├── createCommandEncoder()
     ├── beginRenderPass(color + depth attachments)
     │
-    ├── for each mesh in scene:
-    │   ├── material.updateUniforms()
-    │   ├── mesh.updateModelMatrix()
-    │   ├── setPipeline()
-    │   ├── setBindGroup(0, globalBindGroup)
-    │   ├── setBindGroup(1, materialBindGroup)
-    │   ├── setBindGroup(2, modelBindGroup)
-    │   ├── setVertexBuffer(0, positions)
-    │   ├── setVertexBuffer(1, normals)
-    │   ├── setIndexBuffer()
-    │   └── drawIndexed()
+    ├── if render override:
+    │   └── debug renderer draws terrain visualization
+    └── else for each mesh in scene:
+        ├── material.updateUniforms()
+        ├── mesh.updateModelMatrix()
+        ├── setPipeline()
+        ├── setBindGroup(0, globalBindGroup)
+        ├── setBindGroup(1, materialBindGroup)
+        ├── setBindGroup(2, modelBindGroup)
+        ├── setVertexBuffer(0, positions)
+        ├── setVertexBuffer(1, normals)
+        ├── setIndexBuffer()
+        └── drawIndexed()
     │
     ├── renderPass.end()
     ├── queue.submit([commandEncoder.finish()])
     └── emit 'frame-rendered' event (first frame only, for E2E tests)
+```
+
+## Terrain Debug Mode (M10)
+
+Debug visualization renders CDLOD patches in wireframe with LOD coloring and optional bounding spheres. It uses a frozen camera captured when the toggle is enabled, and replaces normal rendering via `Viewer.setRenderOverride()`.
+
+### Debug Renderer Flow
+
+1. Capture camera state when debug mode toggles on.
+2. Each render:
+   - Select visible nodes via `DebugRenderer.selectNodes()`
+   - Upload per-node data to storage buffer
+   - Draw wireframe patches (and bounds if enabled)
+3. Overlay DOM widget shows node counts and per-level histogram.
+
+### Debug Node Data (32 bytes)
+
+```
+uvOrigin: vec2<f32>
+_pad0: f32
+scale: f32
+lodLevel: u32
+faceId: u32
+radius: f32
+_pad1: f32
 ```
 
 ### Vertex Buffer Layout

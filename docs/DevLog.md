@@ -518,13 +518,32 @@ tests/
 
 ---
 
-## Upcoming
+### M10: Debug Visualization ✓
 
-### M10: Debug Visualization (Next)
-- Wireframe rendering mode for quadtree patches
-- Color-coded by LOD level (0=red → 12=violet)
-- Node count overlay with per-level histogram
-- Tweakpane controls: freezeLOD, forceMaxLOD, wireframeMode, showNodeBounds
+**Goal:** Visual debugging tools to verify quadtree and LOD selection.
+
+**Completed:**
+- Debug renderer for wireframe terrain patches with LOD color gradient
+- Bounding sphere visualization (optional)
+- Exclusive render override (toggle replaces standard model render)
+- Tweakpane controls: enable, freeze LOD, force max LOD, wireframe, bounds, pixel error, max LOD
+- Lightweight DOM overlay for node counts + per-level histogram
+- Fixed debug camera captured when debug mode is enabled
+
+**Files Updated/Added:**
+```
+src/core/Viewer.ts
+src/terrain/DebugRenderer.ts
+src/shaders/debug-wireframe.wgsl
+src/shaders/debug-bounds.wgsl
+src/main.ts
+```
+
+**Verification:** Manual inspection via Terrain Debug toggle in UI.
+
+---
+
+## Upcoming
 
 ---
 
