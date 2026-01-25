@@ -14,6 +14,8 @@ export interface GeometryData {
   positions: Float32Array;
   /** Vertex normals (3 floats per vertex: nx, ny, nz) */
   normals: Float32Array;
+  /** Optional UV coordinates (2 floats per vertex: u, v) */
+  uvs?: Float32Array | undefined;
   /** Triangle indices (3 indices per triangle) */
   indices: Uint16Array | Uint32Array;
 }
@@ -22,6 +24,7 @@ export interface GeometryData {
 export interface GeometryBuffers {
   positionBuffer: GPUBuffer;
   normalBuffer: GPUBuffer;
+  uvBuffer: GPUBuffer | null;
   indexBuffer: GPUBuffer;
   indexCount: number;
   indexFormat: GPUIndexFormat;
@@ -44,6 +47,7 @@ export class Geometry {
   readonly id: GeometryId;
   readonly positions: Float32Array;
   readonly normals: Float32Array;
+  readonly uvs: Float32Array | null;
   readonly indices: Uint16Array | Uint32Array;
   readonly vertexCount: number;
   readonly indexCount: number;
@@ -54,6 +58,7 @@ export class Geometry {
     this.id = geometryId(`geo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     this.positions = data.positions;
     this.normals = data.normals;
+    this.uvs = data.uvs ?? null;
     this.indices = data.indices;
     this.vertexCount = data.positions.length / 3;
     this.indexCount = data.indices.length;
@@ -64,6 +69,9 @@ export class Geometry {
     }
     if (data.positions.length % 3 !== 0) {
       throw new Error('Positions must have 3 components per vertex');
+    }
+    if (data.uvs && data.uvs.length !== this.vertexCount * 2) {
+      throw new Error('UVs must have 2 components per vertex');
     }
   }
 
@@ -92,6 +100,17 @@ export class Geometry {
     });
     device.queue.writeBuffer(normalBuffer, 0, this.normals as unknown as ArrayBuffer);
 
+    // UV buffer (optional)
+    let uvBuffer: GPUBuffer | null = null;
+    if (this.uvs) {
+      uvBuffer = device.createBuffer({
+        label: `${this.id}-uvs`,
+        size: this.uvs.byteLength,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      });
+      device.queue.writeBuffer(uvBuffer, 0, this.uvs as unknown as ArrayBuffer);
+    }
+
     // Index buffer — use uint32 if indices exceed uint16 range
     const indexFormat: GPUIndexFormat = this.indices instanceof Uint32Array ? 'uint32' : 'uint16';
     // Buffer size must be aligned to 4 bytes for writeBuffer
@@ -113,6 +132,7 @@ export class Geometry {
     this.gpuBuffers = {
       positionBuffer,
       normalBuffer,
+      uvBuffer,
       indexBuffer,
       indexCount: this.indexCount,
       indexFormat,
@@ -131,8 +151,14 @@ export class Geometry {
     if (this.gpuBuffers) {
       this.gpuBuffers.positionBuffer.destroy();
       this.gpuBuffers.normalBuffer.destroy();
+      this.gpuBuffers.uvBuffer?.destroy();
       this.gpuBuffers.indexBuffer.destroy();
       this.gpuBuffers = null;
     }
+  }
+
+  /** Check if geometry has UV coordinates */
+  get hasUVs(): boolean {
+    return this.uvs !== null;
   }
 }

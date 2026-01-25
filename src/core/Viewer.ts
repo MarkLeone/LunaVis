@@ -12,7 +12,7 @@ import type { Camera } from './Camera';
 import type { DirectionalLight } from '@/objects/DirectionalLight';
 
 /** Default clear color: Cornflower Blue (#6495ED) */
-const DEFAULT_CLEAR_COLOR: Color = [0.392, 0.584, 0.929, 1.0];
+const DEFAULT_CLEAR_COLOR: Color = [0, 0, 0, 1.0];
 
 /**
  * Global uniform buffer layout (128 bytes):
@@ -238,12 +238,21 @@ export class Viewer {
     return this.gpu !== null;
   }
 
-  /** Get canvas dimensions in physical pixels */
+  /** Maximum texture dimension to prevent GPU crashes on large displays */
+  private static readonly MAX_DIMENSION = 2048;
+
+  /** Get canvas dimensions in physical pixels (capped to MAX_DIMENSION) */
   get pixelSize(): { width: number; height: number } {
     const dpr = window.devicePixelRatio || 1;
+    const rawWidth = Math.floor(this.canvas.clientWidth * dpr);
+    const rawHeight = Math.floor(this.canvas.clientHeight * dpr);
+
+    // Cap dimensions to prevent GPU memory issues
+    const scale = Math.min(1, Viewer.MAX_DIMENSION / Math.max(rawWidth, rawHeight));
+
     return {
-      width: Math.floor(this.canvas.clientWidth * dpr),
-      height: Math.floor(this.canvas.clientHeight * dpr),
+      width: Math.floor(rawWidth * scale),
+      height: Math.floor(rawHeight * scale),
     };
   }
 

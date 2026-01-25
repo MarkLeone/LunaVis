@@ -1,26 +1,41 @@
 /**
  * GLTFLoader: Thin wrapper around @loaders.gl/gltf.
- * Extracts geometry data (positions, normals, indices) from glTF/GLB files.
+ * Extracts geometry data (positions, normals, UVs, indices) and textures from glTF/GLB files.
  */
 
 import { load } from '@loaders.gl/core';
 import { GLTFLoader as LoadersGLTFLoader, postProcessGLTF } from '@loaders.gl/gltf';
-import type { GLTFPostprocessed, GLTFMeshPrimitivePostprocessed } from '@loaders.gl/gltf';
+import type { GLTFPostprocessed, GLTFMeshPrimitivePostprocessed, GLTFMaterialPostprocessed } from '@loaders.gl/gltf';
 import { Geometry } from '@/geometry/Geometry';
 import { Mesh } from '@/objects/Mesh';
 import { SolidMaterial } from '@/materials/SolidMaterial';
+import { TexturedMaterial, createTextureFromImage } from '@/materials/TexturedMaterial';
 import type { Color } from '@/types';
+
+/** Loaded texture information */
+export interface LoadedTexture {
+  /** Image data (ImageBitmap or HTMLImageElement) */
+  image: ImageBitmap | HTMLImageElement;
+  /** Original image URI */
+  uri?: string | undefined;
+}
 
 /** Options for loading glTF files */
 export interface GLTFLoadOptions {
   /** Default material color if model has no materials (default: gray) */
-  defaultColor?: Color;
+  defaultColor?: Color | undefined;
+  /** GPU device for creating textures (required for textured models) */
+  device?: GPUDevice | undefined;
+  /** Specular intensity for textured materials (0 = no specular, 1 = full) (default: 1) */
+  specularIntensity?: number | undefined;
 }
 
 /** Result of loading a glTF file */
 export interface GLTFLoadResult {
   /** All meshes extracted from the model */
   meshes: Mesh[];
+  /** Loaded textures (if loadImages was true) */
+  textures: LoadedTexture[];
   /** Scene name if present */
   name?: string | undefined;
 }
@@ -45,17 +60,43 @@ export class GLTFLoader {
    */
   async load(url: string, options?: GLTFLoadOptions): Promise<GLTFLoadResult> {
     const color = options?.defaultColor ?? this.defaultColor;
+    const device = options?.device;
+    const specularIntensity = options?.specularIntensity ?? 1.0;
 
-    // Load glTF using loaders.gl
+    // Load glTF using loaders.gl (with images enabled for textures)
     const gltfWithBuffers = await load(url, LoadersGLTFLoader, {
       gltf: {
         loadBuffers: true,
-        loadImages: false, // We don't support textures yet
+        loadImages: true,
       },
     });
 
     // Post-process to resolve references and create typed arrays
     const gltf = postProcessGLTF(gltfWithBuffers) as GLTFPostprocessed;
+
+    // Extract textures from loaded images
+    const textures: LoadedTexture[] = [];
+    const gpuTextures: Map<number, GPUTexture> = new Map();
+    
+    if (gltf.images) {
+      for (let i = 0; i < gltf.images.length; i++) {
+        const image = gltf.images[i]!;
+        // loaders.gl provides the image data in the 'image' property
+        const imageData = (image as unknown as { image?: ImageBitmap | HTMLImageElement }).image;
+        if (imageData) {
+          textures.push({
+            image: imageData,
+            uri: image.uri,
+          });
+          
+          // Create GPU texture if device is provided
+          if (device) {
+            const gpuTexture = await createTextureFromImage(device, imageData, image.uri);
+            gpuTextures.set(i, gpuTexture);
+          }
+        }
+      }
+    }
 
     const meshes: Mesh[] = [];
 
@@ -63,7 +104,15 @@ export class GLTFLoader {
     if (gltf.meshes) {
       for (const gltfMesh of gltf.meshes) {
         for (const primitive of gltfMesh.primitives || []) {
-          const mesh = this.extractMesh(primitive, color);
+          // Get material info for this primitive
+          const materialInfo = primitive.material as GLTFMaterialPostprocessed | undefined;
+          const textureIndex = this.getBaseColorTextureIndex(materialInfo);
+          const loadedTexture = textureIndex !== null && textureIndex < textures.length
+            ? textures[textureIndex]
+            : null;
+          const gpuTexture = textureIndex !== null ? gpuTextures.get(textureIndex) : undefined;
+
+          const mesh = this.extractMesh(primitive, color, loadedTexture, gpuTexture, specularIntensity);
           if (mesh) {
             meshes.push(mesh);
           }
@@ -75,12 +124,27 @@ export class GLTFLoader {
       throw new Error(`No meshes found in glTF file: ${url}`);
     }
 
-    console.info(`[LunaVis] Loaded ${meshes.length} mesh(es) from ${url}`);
+    console.info(`[LunaVis] Loaded ${meshes.length} mesh(es), ${textures.length} texture(s) from ${url}`);
 
     return {
       meshes,
+      textures,
       name: gltf.asset?.generator,
     };
+  }
+
+  /**
+   * Get the base color texture index from a glTF material.
+   */
+  private getBaseColorTextureIndex(material: GLTFMaterialPostprocessed | undefined): number | null {
+    if (!material) return null;
+    const pbr = material.pbrMetallicRoughness;
+    if (!pbr) return null;
+    const textureInfo = pbr.baseColorTexture;
+    if (!textureInfo) return null;
+    // textureInfo.index points to gltf.textures[index], which has a source property
+    // pointing to gltf.images[source]. For simplicity, we assume source === index.
+    return textureInfo.index ?? null;
   }
 
   /**
@@ -88,7 +152,10 @@ export class GLTFLoader {
    */
   private extractMesh(
     primitive: GLTFMeshPrimitivePostprocessed,
-    color: Color
+    color: Color,
+    texture: LoadedTexture | null = null,
+    gpuTexture?: GPUTexture,
+    specularIntensity = 1.0
   ): Mesh | null {
     const attributes = primitive.attributes;
     if (!attributes) {
@@ -114,6 +181,13 @@ export class GLTFLoader {
       normals = this.generateFlatNormals(positions, primitive.indices?.value);
     }
 
+    // Get UVs (optional)
+    let uvs: Float32Array | undefined;
+    const uvAccessor = attributes['TEXCOORD_0'];
+    if (uvAccessor?.value) {
+      uvs = new Float32Array(uvAccessor.value);
+    }
+
     // Get indices (optional - generate sequential if missing)
     let indices: Uint16Array | Uint32Array;
     if (primitive.indices?.value) {
@@ -133,14 +207,30 @@ export class GLTFLoader {
         : new Uint16Array(vertexCount).map((_, i) => i);
     }
 
-    // Create geometry
-    const geometry = new Geometry({ positions, normals, indices });
+    // Create geometry (with UVs if present)
+    const geometryData = uvs
+      ? { positions, normals, uvs, indices }
+      : { positions, normals, indices };
+    const geometry = new Geometry(geometryData);
 
-    // Create material with default color
-    // TODO: Extract material properties from glTF if present
-    const material = new SolidMaterial({ color, shininess: 32 });
+    // Create appropriate material based on whether we have a GPU texture
+    let material: SolidMaterial | TexturedMaterial;
+    if (gpuTexture && uvs) {
+      // Use textured material when we have both a texture and UVs
+      material = new TexturedMaterial(gpuTexture, { color, shininess: 32, specularIntensity });
+    } else {
+      // Fall back to solid material
+      material = new SolidMaterial({ color, shininess: 32 });
+    }
 
-    return new Mesh(geometry, material);
+    const mesh = new Mesh(geometry, material);
+
+    // Store texture reference for debugging/later use
+    if (texture) {
+      (mesh as Mesh & { _loadedTexture?: LoadedTexture })._loadedTexture = texture;
+    }
+
+    return mesh;
   }
 
   /**

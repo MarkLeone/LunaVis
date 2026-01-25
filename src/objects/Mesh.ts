@@ -7,7 +7,14 @@ import type { MeshId } from '@/types';
 import { meshId } from '@/types';
 import type { Geometry, GeometryBuffers } from '@/geometry/Geometry';
 import type { SolidMaterial, MaterialResources } from '@/materials/SolidMaterial';
+import type { TexturedMaterial, TexturedMaterialResources } from '@/materials/TexturedMaterial';
 import { Object3D } from './Object3D';
+
+/** Union type for supported materials */
+export type MeshMaterial = SolidMaterial | TexturedMaterial;
+
+/** Union type for material resources */
+type AnyMaterialResources = MaterialResources | TexturedMaterialResources;
 
 /** GPU resources specific to a mesh instance */
 export interface MeshResources {
@@ -31,13 +38,13 @@ export interface MeshResources {
 export class Mesh extends Object3D {
   readonly meshId: MeshId;
   readonly geometry: Geometry;
-  readonly material: SolidMaterial;
+  readonly material: MeshMaterial;
 
   private geometryBuffers: GeometryBuffers | null = null;
-  private materialResources: MaterialResources | null = null;
+  private materialResources: AnyMaterialResources | null = null;
   private meshResources: MeshResources | null = null;
 
-  constructor(geometry: Geometry, material: SolidMaterial) {
+  constructor(geometry: Geometry, material: MeshMaterial) {
     super();
     this.meshId = meshId(`mesh-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     this.geometry = geometry;
@@ -106,7 +113,7 @@ export class Mesh extends Object3D {
     this.updateModelMatrix(device);
 
     const { pipeline, bindGroup: materialBindGroup } = this.materialResources;
-    const { positionBuffer, normalBuffer, indexBuffer, indexCount, indexFormat } = this.geometryBuffers;
+    const { positionBuffer, normalBuffer, uvBuffer, indexBuffer, indexCount, indexFormat } = this.geometryBuffers;
     const { modelBindGroup } = this.meshResources;
 
     pass.setPipeline(pipeline);
@@ -115,6 +122,12 @@ export class Mesh extends Object3D {
     pass.setBindGroup(2, modelBindGroup);       // Model matrix
     pass.setVertexBuffer(0, positionBuffer);
     pass.setVertexBuffer(1, normalBuffer);
+    
+    // Set UV buffer if geometry has UVs (required for textured materials)
+    if (uvBuffer) {
+      pass.setVertexBuffer(2, uvBuffer);
+    }
+    
     pass.setIndexBuffer(indexBuffer, indexFormat);
     pass.drawIndexed(indexCount);
   }

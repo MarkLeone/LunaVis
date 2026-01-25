@@ -18,8 +18,18 @@ import type { Color } from '@/types';
 /** Package version for logging */
 const VERSION = '0.1.0';
 
+/** Model configuration */
+interface ModelConfig {
+  path: string;
+  color: Color;
+  /** Whether this model has textures that need GPU device for loading */
+  textured?: boolean;
+  /** Specular intensity (0 = no specular, 1 = full) */
+  specularIntensity?: number;
+}
+
 /** Available models with display names and default colors */
-const MODELS: Record<string, { path: string; color: Color }> = {
+const MODELS: Record<string, ModelConfig> = {
   'Utah Teapot': {
     path: '/models/utah_teapot.glb',
     color: [0.8, 0.6, 0.4, 1.0],
@@ -27,6 +37,12 @@ const MODELS: Record<string, { path: string; color: Color }> = {
   'Duck': {
     path: '/models/Duck.glb',
     color: [0.9, 0.7, 0.2, 1.0],
+  },
+  'Moon': {
+    path: '/lunar/scene.gltf',
+    color: [1.0, 1.0, 1.0, 1.0],
+    textured: true,
+    specularIntensity: 0,  // Lunar regolith is purely diffuse
   },
 };
 
@@ -178,10 +194,12 @@ async function loadModel(state: AppState, modelName: string): Promise<Mesh[]> {
   state.scene.clear();
   state.currentMeshes = [];
 
-  // Load new model
+  // Load new model (pass device for textured models)
   emitEvent('model-loading', { url: modelConfig.path });
   const result = await state.loader.load(modelConfig.path, {
     defaultColor: modelConfig.color,
+    device: modelConfig.textured ? state.viewer.context.device : undefined,
+    specularIntensity: modelConfig.specularIntensity,
   });
 
   // Add meshes to scene and calculate combined bounds
