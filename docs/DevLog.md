@@ -467,13 +467,64 @@ tests/quadtree.test.ts # 38 tests for construction, traversal, precision
 
 ---
 
+### M9: LOD Selection & Frustum Culling ✓
+
+**Goal:** CPU traversal that selects visible nodes based on camera position and frustum.
+
+**Completed:**
+- `Frustum` class with:
+  - Gribb/Hartmann plane extraction from view-projection matrix
+  - `intersectsSphere()` for frustum culling
+  - `containsSphere()` for full containment test
+  - All calculations in double precision
+- `NodeData` struct (32 bytes, GPU-aligned):
+  - `relativeOrigin` (vec3), `scale`, `lodLevel`, `faceId`, `morphStart`, `morphEnd`
+  - `packNodeData()` / `unpackNodeData()` for GPU upload
+- `LODSelector` class with:
+  - Screen-space error metric for adaptive LOD thresholds
+  - `updateRanges(screenHeight, fov)` — recalculate on resize
+  - `selectNodes(tree, cameraPos, frustum)` → NodeData[]
+  - Automatic tree subdivision/collapse based on camera distance
+  - RTE (Relative-to-Eye) position calculation with precision validation
+  - Selection statistics (nodes visited, culled, per-level histogram)
+- Barrel export: `src/terrain/index.ts`
+- Unit tests: 25 for Frustum, 23 for LODSelector
+
+**Files Created:**
+```
+src/terrain/
+├── Frustum.ts       # 190 lines — frustum plane extraction + intersection
+├── NodeData.ts      # 160 lines — GPU struct definition + packing
+├── LODSelector.ts   # 300 lines — screen-space error LOD selection
+└── index.ts         # Barrel export
+tests/
+├── frustum.test.ts      # 25 tests
+└── lod-selector.test.ts # 23 tests
+```
+
+**Design Decisions:**
+- **Screen-space error metric:** `distance = (nodeSize × screenHeight) / (maxPixelError × 2 × tan(fov/2))`
+- **Geometric progression:** Each coarser LOD level doubles the distance threshold
+- **Morph zones:** `morphStart = distance × 0.8` (configurable via `morphRatio`)
+- **RTE precision:** Assert magnitude < 10^6 before float32 conversion
+
+**Technical Notes:**
+- Frustum planes use Hessian normal form (unit normal + signed distance)
+- LOD ranges are pre-computed on resize/FOV change, not per-frame
+- Tree modification (subdivide/collapse) happens during selection traversal
+- NodeData layout matches WGSL struct for direct GPU upload
+
+**Verification:** All 101 unit tests pass. TypeScript compiles cleanly.
+
+---
+
 ## Upcoming
 
-### M9: LOD Selection & Frustum Culling (Next)
-- `Frustum` class with 6 plane extraction
-- Frustum-sphere intersection tests
-- `selectVisibleNodes()` with distance-based LOD metric
-- Relative-to-Eye (RTE) position calculation
+### M10: Debug Visualization (Next)
+- Wireframe rendering mode for quadtree patches
+- Color-coded by LOD level (0=red → 12=violet)
+- Node count overlay with per-level histogram
+- Tweakpane controls: freezeLOD, forceMaxLOD, wireframeMode, showNodeBounds
 
 ---
 

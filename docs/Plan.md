@@ -918,7 +918,7 @@ Based on developer interview:
 
 ---
 
-### M9 — LOD Selection & Frustum Culling
+### M9 — LOD Selection & Frustum Culling ✓
 
 **Goal:** CPU traversal that selects visible nodes based on camera position and frustum.
 
@@ -935,6 +935,7 @@ Based on developer interview:
 - `src/terrain/Frustum.ts` (new)
 - `src/terrain/LODSelector.ts` (new)
 - `src/terrain/NodeData.ts` (new)
+- `src/terrain/index.ts` (new — barrel export)
 - `tests/frustum.test.ts` (new)
 - `tests/lod-selector.test.ts` (new)
 
@@ -942,6 +943,8 @@ Based on developer interview:
 - Frustum culling correctly rejects off-screen nodes
 - LOD selection produces appropriate node counts at various camera distances
 - RTE positions are small enough for float32 precision (verified by assertion)
+
+**Status:** Complete (2026-01-25)
 
 ---
 

@@ -486,6 +486,88 @@ u      u+s/2   u+s
 
 Children are created lazily via `subdivide()` and removed via `collapse()`.
 
+### LOD Selection (M9)
+
+```
+LODSelector
+├── config: LODConfig           # maxPixelError, screenHeight, fov, maxLodLevel, morphRatio
+├── ranges: LODRange[]          # Pre-computed distance thresholds per LOD level
+├── updateRanges()              # Recalculate on resize/FOV change
+└── selectNodes(tree, camera, frustum) → NodeData[]
+
+Frustum
+├── planes[6]: FrustumPlane     # Left, Right, Bottom, Top, Near, Far
+├── fromViewProjection(vp)      # Gribb/Hartmann plane extraction
+├── intersectsSphere()          # Culling test
+└── containsSphere()            # Full containment test
+
+NodeData (32 bytes, GPU-ready)
+├── relativeOrigin: vec3<f32>   # RTE position (12 bytes)
+├── scale: f32                  # Node size in UV space (4 bytes)
+├── lodLevel: u32               # For mipmap selection (4 bytes)
+├── faceId: u32                 # Cube face 0-5 (4 bytes)
+├── morphStart: f32             # Morph zone start (4 bytes)
+└── morphEnd: f32               # LOD switch distance (4 bytes)
+```
+
+### LOD Range Calculation
+
+Screen-space error metric determines distance thresholds:
+
+```typescript
+// fitParam: pixels per unit at distance 1
+fitParam = screenHeight / (2 * tan(fov / 2))
+
+// finestRange: distance where finest node has maxPixelError
+finestNodeSize = 1 / 2^maxLodLevel
+finestRange = (finestNodeSize * fitParam) / maxPixelError
+
+// Each coarser level doubles the range
+ranges[lod].distance = finestRange * 2^(maxLodLevel - lod)
+ranges[lod].morphStart = ranges[lod].distance * morphRatio
+```
+
+### Selection Algorithm
+
+```
+selectNodes(tree, cameraPos, frustum):
+  for each root in tree.roots:
+    selectRecursive(root, cameraPos, frustum, results)
+  return results
+
+selectRecursive(node, cameraPos, frustum, results):
+  // 1. Frustum cull
+  if not frustum.intersectsSphere(node.boundingSphere):
+    return  // Entire subtree culled
+
+  // 2. Distance calculation (double precision)
+  dist = distance(node.sphereCenter, cameraPos)
+
+  // 3. LOD decision
+  if dist < ranges[node.lodLevel].distance and node.lodLevel < maxLodLevel:
+    node.subdivide() if needed
+    for child in node.children:
+      selectRecursive(child, ...)
+  else:
+    node.collapse() if subdivided
+    results.push(createNodeData(node, cameraPos))
+```
+
+### Frustum Plane Extraction
+
+Uses Gribb/Hartmann method on view-projection matrix (column-major):
+
+```
+Left plane:   row3 + row0
+Right plane:  row3 - row0
+Bottom plane: row3 + row1
+Top plane:    row3 - row1
+Near plane:   row3 + row2
+Far plane:    row3 - row2
+```
+
+Each plane is normalized to unit normal form for distance calculations.
+
 ## Lunar Texture Formats
 
 ### Color/Albedo Map (M7)

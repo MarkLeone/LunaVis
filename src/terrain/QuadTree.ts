@@ -9,7 +9,7 @@
  * the terrain rendering pipeline.
  */
 
-import { QuadNode, type BoundingSphere } from './QuadNode';
+import { QuadNode } from './QuadNode';
 import type { FaceId } from '@/types';
 
 /** Statistics about the current tree state */

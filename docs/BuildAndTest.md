@@ -115,7 +115,11 @@ npm run test:watch
 **What's tested:**
 - Type helpers (`ok()`, `err()`, `isOk()`, `isErr()`)
 - Branded ID constructors (`meshId()`, `materialId()`)
-- (Future) Geometry math, buffer utilities
+- Quadtree data structure (`QuadNode`, `QuadTree`)
+- Frustum plane extraction and sphere intersection
+- LOD selection with screen-space error metric
+- NodeData GPU struct packing/unpacking
+- Camera auto-framing and OrbitControls sync
 
 ### Smoke Test (Playwright + Firefox)
 

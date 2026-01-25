@@ -2,7 +2,7 @@
 
 A high-fidelity WebGPU lunar visualization built from scratch in TypeScript. Designed for seamless zoom from orbit to surface using [CDLOD](https://github.com/fstrugar/CDLOD) (Continuous Distance-Dependent Level of Detail) terrain rendering, [NASA LROC](https://www.lroc.asu.edu/) imagery, physically-based [Hapke](https://en.wikipedia.org/wiki/Hapke_parameters) lighting for realistic lunar regolith, and solar system [ephemeris](https://en.wikipedia.org/wiki/Ephemeris) calculations for accurate Sun/Moon positioning.
 
-**Status:** Milestone 7 complete — Textured Moon with NASA color map. Next: CDLOD terrain system.
+**Status:** Milestone 9 complete — CDLOD foundation (quadtree + LOD selection). Next: Debug visualization and GPU rendering.
 
 ## Quick Start
 
@@ -65,14 +65,17 @@ Tweakpane UI (top-right) adjusts light, ambient, and material properties.
 - **M4:** Blinn-Phong lighting, directional light, Tweakpane debug UI
 - **M5:** glTF model loading, auto camera framing, FPS counter
 - **M7:** Textured Moon with NASA color map, KTX2 texture pipeline
+- **M8:** Quadtree data structure for spherified cube (6 faces, 12+ LOD levels)
+- **M9:** LOD selection with screen-space error metric, frustum culling, RTE positioning
 
 ## What's Planned
 
-### CDLOD Terrain System (Milestones 8-19)
+### CDLOD Terrain System (Milestones 10-19)
 
 A full [CDLOD](https://github.com/fstrugar/CDLOD) (Continuous Distance-Dependent Level of Detail) implementation for planetary-scale rendering. This technique divides the Moon's surface into a quadtree of patches, rendering nearby areas in high detail while distant areas use coarser geometry — enabling seamless zoom from orbit to surface.
 
-- **M8-M10:** CPU-side quadtree on a [spherified cube](https://catlikecoding.com/unity/tutorials/cube-sphere/), view frustum culling, LOD (Level of Detail) selection with debug wireframe visualization
+- **M8-M9:** ✅ CPU-side quadtree on a [spherified cube](https://catlikecoding.com/unity/tutorials/cube-sphere/), view frustum culling, LOD selection with screen-space error metric
+- **M10:** Debug wireframe visualization with color-coded LOD levels
 - **M11-M13:** GPU instanced rendering (draw thousands of terrain patches in one call), cube-to-sphere projection, displacement mapping using [NASA LDEM](https://astrogeology.usgs.gov/search/map/Moon/LRO/LOLA/Lunar_LRO_LOLA_Global_LDEM_118m_Mar2014) elevation data
 - **M14-M16:** [Geomorphing](https://developer.nvidia.com/gpugems/gpugems2/part-i-geometric-complexity/chapter-2-terrain-rendering-using-gpu-based-geometry) (smoothly blend between LOD levels to eliminate "popping"), analytic normal reconstruction for sharp lighting on coarse meshes
 - **M17-M18:** Smooth [B-spline](https://en.wikipedia.org/wiki/B-spline) height sampling, [Hapke BRDF](https://en.wikipedia.org/wiki/Hapke_parameters) for physically accurate lunar dust reflectance
@@ -97,6 +100,7 @@ src/
 ├── materials/  # SolidMaterial, TexturedMaterial
 ├── loaders/    # GLTFLoader
 ├── controls/   # OrbitControls
+├── terrain/    # CDLOD: QuadTree, LODSelector, Frustum, NodeData
 ├── shaders/    # blinn-phong.wgsl, textured-blinn-phong.wgsl
 └── types/      # TypeScript type definitions
 

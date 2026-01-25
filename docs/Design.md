@@ -162,6 +162,40 @@ type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
 
 **Rationale:** Keeps the terrain system generic. The same quadtree code works for any celestial body by changing the radius uniform.
 
+### LOD Selection Strategy
+
+**Decision:** Screen-space error metric with pre-computed distance thresholds.
+
+```typescript
+// At init/resize: compute LOD ranges from pixel error budget
+fitParam = screenHeight / (2 * tan(fov / 2))
+finestRange = (finestNodeSize * fitParam) / maxPixelError
+
+// At runtime: simple distance comparison
+for (lod = 0; lod <= maxLod; lod++) {
+  ranges[lod] = finestRange * 2^(maxLod - lod)
+}
+```
+
+**Rationale:** Hybrid approach — combines CDLOD's predictable per-frame behavior with automatic adaptation to screen resolution and FOV. The `maxPixelError` parameter (default: 4 pixels) is intuitive: "how much geometric popping am I willing to tolerate?"
+
+### Morph Zone Calculation
+
+**Decision:** Morph zone covers 20% of each LOD level's range (morphStart = distance × 0.8).
+
+**Rationale:** Provides smooth transition without excessive blending overhead. Smaller zones (10%) cause visible popping; larger zones (30%+) waste GPU time on unnecessary blending.
+
+### Relative-to-Eye (RTE) Coordinates
+
+**Decision:** Compute camera-relative positions on CPU, pass to GPU as float32.
+
+```typescript
+rtePosition = nodeSphereCenter - cameraPosition  // Double precision
+// Then cast to float32 for GPU upload
+```
+
+**Rationale:** Planetary scales exceed float32 precision. By subtracting camera position on CPU (double precision), the resulting RTE vector is small enough for float32 without jitter. Assertion validates magnitude < 10^6.
+
 ### Cube Face Mapping
 
 **Decision:** Match right-handed Y-up coordinate system used throughout the codebase.
