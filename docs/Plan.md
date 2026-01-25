@@ -1001,3 +1001,625 @@ Standard equirectangular sphere mapping expects:
 3. **M8b**: Add LOD with CDLOD or quadtree
 4. **M9a**: Brute-force ray shadows (limited triangles)
 5. **M9b**: BVH-accelerated shadows for full terrain
+
+---
+
+# Part 4: CDLOD Implementation Plan (M8-M19)
+
+This section extends the project with a full CDLOD (Continuous Distance-Dependent Level of Detail) terrain system based on the technical specification in [CDLOD Design Doc.md](CDLOD%20Design%20Doc.md).
+
+## Design Reference
+
+The implementation follows the architecture described in `docs/CDLOD Design Doc.md`, which covers:
+
+- **High-Level Architecture**: Quad-tree on spherified cube, CPU double-precision for RTE, GPU vertex shader for instancing/morphing/displacement
+- **CPU Selection & Precision**: Double-precision camera-relative calculations, LOD selection, frustum culling
+- **GPU Resources**: Static grid mesh, heightmap with mipmaps
+- **Vertex Shader**: Geomorphing, cube-to-sphere mapping, displacement
+- **Heightmap Sampling**: Biquadratic B-Spline interpolation, tile overlap, explicit mip-level selection
+- **Fragment Shader**: Analytic normal reconstruction, albedo filtering with anisotropic filtering
+- **BRDF**: Hapke Model for physically accurate lunar regolith rendering
+
+## Implementation Decisions
+
+Based on developer interview:
+
+| Aspect | Decision |
+|--------|----------|
+| CPU Implementation | TypeScript with `Float64Array` for double precision |
+| LOD Depth | 12+ levels (orbital-to-surface transitions) |
+| Initial Texture Format | Cylindrical projection displacement map (16-bit TIFF), tiled/mipmapped offline or on GPU |
+| Geomorphing | Start with distance-based blend, add full per-vertex morph later |
+| Lighting | Start with Blinn-Phong, add Hapke BRDF in later milestone |
+| Debug Tooling | Wireframe LOD visualization, color-coded by level |
+| Target Platform | Desktop (modern discrete GPU) |
+
+---
+
+## Phase 1: Core Infrastructure
+
+### M8 — Quadtree Data Structure
+
+**Goal:** Implement the CPU-side quadtree that represents the spherified cube terrain.
+
+**Deliverables:**
+- `QuadTree` class: manages 6 root nodes (cube faces), recursive subdivision
+- `QuadNode` class: `center`, `size`, `lodLevel`, `faceID`, `children[4]`, `boundingSphere`
+- Double-precision math using `Float64Array` for node bounds
+- Bounding sphere calculation for each node (spherified cube geometry)
+- Maximum depth of 12+ levels supported
+- Unit tests for tree construction and traversal
+
+**Files:**
+- `src/terrain/QuadTree.ts` (new)
+- `src/terrain/QuadNode.ts` (new)
+- `tests/quadtree.test.ts` (new)
+
+**Acceptance Criteria:**
+- Quadtree can subdivide any cube face to 12+ levels
+- Node bounds are computed in double precision
+- Bounding spheres correctly encompass spherified cube patches
+
+---
+
+### M9 — LOD Selection & Frustum Culling
+
+**Goal:** CPU traversal that selects visible nodes based on camera position and frustum.
+
+**Deliverables:**
+- `Frustum` class: extract 6 planes from `viewProjectionMatrix`
+- Frustum-AABB and frustum-sphere intersection tests
+- LOD metric: distance-to-camera vs pre-computed threshold per level
+- `selectVisibleNodes(camera, frustum)`: returns flat array of leaf nodes to render
+- Relative-to-Eye (RTE) position calculation: `nodeCenter - cameraPosition` (double → float32)
+- `NodeData` struct matching WGSL layout: `relativeOrigin`, `scale`, `lodLevel`, `faceID`, `morphStart`, `morphEnd`
+- Unit tests for culling accuracy
+
+**Files:**
+- `src/terrain/Frustum.ts` (new)
+- `src/terrain/LODSelector.ts` (new)
+- `src/terrain/NodeData.ts` (new)
+- `tests/frustum.test.ts` (new)
+- `tests/lod-selector.test.ts` (new)
+
+**Acceptance Criteria:**
+- Frustum culling correctly rejects off-screen nodes
+- LOD selection produces appropriate node counts at various camera distances
+- RTE positions are small enough for float32 precision (verified by assertion)
+
+---
+
+### M10 — Debug Visualization
+
+**Goal:** Visual debugging tools to verify quadtree and LOD selection.
+
+**Deliverables:**
+- Wireframe rendering mode for quadtree patches
+- Color-coded by LOD level (0=red → 12=violet gradient)
+- Node count overlay: total nodes, visible nodes, per-level histogram
+- Tweakpane controls:
+  - `freezeLOD`: stop LOD updates (inspect current state)
+  - `forceMaxLOD`: render all nodes at maximum detail
+  - `wireframeMode`: toggle wireframe rendering
+  - `showNodeBounds`: render bounding spheres
+- Console logging of LOD distribution
+
+**Files:**
+- `src/terrain/DebugRenderer.ts` (new)
+- `src/shaders/debug-wireframe.wgsl` (new)
+- Update `src/main.ts` with debug UI
+
+**Acceptance Criteria:**
+- Can visually verify LOD transitions occur at expected distances
+- Wireframe clearly shows patch boundaries
+- Node counts in UI match expected values for camera position
+
+---
+
+## Phase 2: GPU Rendering Pipeline
+
+### M11 — Static Grid Mesh & Instanced Rendering
+
+**Goal:** GPU infrastructure for rendering many terrain patches with a single draw call.
+
+**Deliverables:**
+- Static N×N grid mesh generator (32×32 recommended, configurable)
+- Single `GPUBuffer` for grid vertex positions (0..1 UV space)
+- `StorageBuffer` for `NodeData` array (uploaded each frame)
+- Instanced draw call using `@builtin(instance_index)`
+- Vertex shader: position grid vertices using `NodeData.relativeOrigin` and `scale`
+- Render flat patches on unit cube (no sphere projection yet)
+
+**Files:**
+- `src/terrain/GridMesh.ts` (new)
+- `src/terrain/TerrainRenderer.ts` (new)
+- `src/shaders/terrain-flat.wgsl` (new)
+
+**Acceptance Criteria:**
+- Single draw call renders all visible patches
+- Patches appear as flat quads on cube faces
+- Instance count matches `selectVisibleNodes()` output
+
+---
+
+### M12 — Cube-to-Sphere Projection
+
+**Goal:** Project flat cube patches onto sphere surface.
+
+**Deliverables:**
+- `uvToCubeDir(faceID, uv)` function in WGSL (6-face mapping per design doc)
+- Spherified cube normalization: `normalize(cubeDir)`
+- Apply planet radius to position vertices on sphere surface
+- Correct handling of all 6 cube faces
+- Integration with existing camera/scene system
+
+**Files:**
+- Update `src/shaders/terrain-flat.wgsl` → `src/shaders/terrain-sphere.wgsl`
+- Update `src/terrain/TerrainRenderer.ts`
+
+**Acceptance Criteria:**
+- Patches form a seamless sphere (no gaps at face boundaries)
+- Sphere radius matches Moon (1737.4 km or normalized scale)
+- Camera orbit controls work correctly with terrain
+
+---
+
+### M13 — Heightmap Displacement (Cylindrical Projection)
+
+**Goal:** Apply lunar elevation data to terrain vertices.
+
+**Deliverables:**
+- Convert `ldem_16.tif` to GPU-friendly format (R16Float or R32Float)
+- Pre-generate mipmaps offline (one per LOD level) OR runtime mipmap generation
+- Cylindrical (equirectangular) UV calculation in vertex shader
+- `textureSampleLevel()` with explicit mip selection based on `lodLevel`
+- Displacement along sphere normal: `position = normal * (radius + height)`
+- Height scale uniform for artistic control
+
+**Files:**
+- `scripts/convert-displacement.sh` (new) OR compute shader for runtime conversion
+- `src/terrain/HeightmapLoader.ts` (new)
+- Update `src/shaders/terrain-sphere.wgsl` → `src/shaders/terrain-displaced.wgsl`
+
+**Acceptance Criteria:**
+- Lunar craters and maria visible at appropriate zoom levels
+- No texture swimming or aliasing artifacts
+- Mip level selection prevents over-sampling at distance
+
+---
+
+## Phase 3: Quality Refinement
+
+### M14 — Distance-Based Blend Geomorphing
+
+**Goal:** Eliminate LOD popping with smooth per-patch transitions.
+
+**Deliverables:**
+- Per-patch morph factor: `morphLerp = clamp((dist - morphStart) / (morphEnd - morphStart), 0, 1)`
+- Blend current LOD height with parent LOD height (sample coarser mip)
+- `morphStart` and `morphEnd` constants in `NodeData` (pre-computed on CPU)
+- Smooth visual transitions during camera movement
+
+**Files:**
+- Update `src/terrain/LODSelector.ts` (compute morph ranges)
+- Update `src/shaders/terrain-displaced.wgsl`
+
+**Acceptance Criteria:**
+- No visible "pop" when LOD changes
+- Morph zone width tunable via constant
+- Performance overhead minimal (<5% frame time increase)
+
+---
+
+### M15 — Full Per-Vertex Geomorphing
+
+**Goal:** Crack-free LOD transitions with vertex-level morphing.
+
+**Deliverables:**
+- Identify odd vs even vertices in grid using `fract(vertexIdx * 0.5)`
+- Odd vertices morph toward midpoint of even neighbors
+- Vertex-level `morphLerp` application (not just patch-level)
+- Proper crack prevention at LOD boundaries between adjacent patches
+- Performance comparison vs distance-only blend
+
+**Files:**
+- Update `src/shaders/terrain-displaced.wgsl`
+- Add `src/terrain/MorphConstants.ts` (precomputed morph data)
+
+**Acceptance Criteria:**
+- Zero cracks visible at any LOD boundary
+- Smooth vertex sliding during transitions
+- Grid connectivity maintained across LOD changes
+
+---
+
+### M16 — Analytic Normal Reconstruction
+
+**Goal:** Sharp lighting detail independent of mesh resolution.
+
+**Deliverables:**
+- Pass tangent basis (T, B, N) from vertex to fragment shader
+- Sample heightmap neighbors in fragment shader (finite difference method)
+- Compute partial derivatives: `dH/du`, `dH/dv`
+- Reconstruct perturbed normal: `cross(T + N*dH_du, B + N*dH_dv)`
+- Replace interpolated vertex normals with analytic normals
+- Epsilon scaling based on mip level to prevent aliasing
+
+**Files:**
+- `src/shaders/terrain-analytic.wgsl` (new, replaces terrain-displaced.wgsl)
+- Update `src/terrain/TerrainRenderer.ts`
+
+**Acceptance Criteria:**
+- Lighting detail visible even on coarse LOD meshes
+- No faceting artifacts from low vertex count
+- Shadows align with visible terrain features
+
+---
+
+## Phase 4: Physical Accuracy
+
+### M17 — Biquadratic B-Spline Sampling
+
+**Goal:** C1-continuous surface for artifact-free lighting.
+
+**Deliverables:**
+- 3×3 texel neighborhood fetch in fragment shader
+- B-spline basis weight calculation
+- Smooth height reconstruction (no derivative discontinuities)
+- Smooth derivative reconstruction for normal calculation
+- Visual quality comparison vs bilinear baseline
+- Optional: 1-texel tile overlap for seamless boundaries
+
+**Files:**
+- `src/shaders/bspline-sampling.wgsl` (new, include file)
+- Update `src/shaders/terrain-analytic.wgsl`
+
+**Acceptance Criteria:**
+- Lighting transitions smooth at texel boundaries
+- No "staircase" artifacts in normals
+- Acceptable performance (<10% overhead vs bilinear)
+
+---
+
+### M18 — Hapke BRDF Implementation
+
+**Goal:** Physically accurate lunar regolith lighting.
+
+**Deliverables:**
+- Hapke reflectance equation in fragment shader (2012 revision)
+- Lommel-Seeliger term (flat disk appearance, no limb darkening)
+- Henyey-Greenstein double-lobed phase function
+- Opposition surge (shadow hiding): `B_S(g) = 1 / (1 + tan(g/2) / h_S)`
+- Color map treated as single-scattering albedo (w), not multiplied twice
+- Tweakpane controls for Hapke parameters:
+  - `b` (0.24): phase function shape
+  - `c` (0.30): backscatter/forward ratio
+  - `BS0` (1.8): opposition surge amplitude
+  - `hS` (0.07): opposition surge width
+  - `θ̄` (23.4°): macroscopic roughness
+
+**Files:**
+- `src/shaders/hapke-brdf.wgsl` (new, include file)
+- `src/shaders/terrain-hapke.wgsl` (new, final terrain shader)
+- Update `src/terrain/TerrainRenderer.ts`
+
+**Acceptance Criteria:**
+- Moon appears as flat disk at full phase (no limb darkening)
+- Opposition surge visible when sun behind camera
+- Visual match to NASA reference images at various phase angles
+
+---
+
+## Phase 5: Optimization & Streaming
+
+### M19 — Tile-Based Texture Streaming
+
+**Goal:** Handle textures larger than GPU memory.
+
+**Deliverables:**
+- Offline tile generation from full-resolution displacement/color data
+- Tile naming convention: `tile_{face}_{lod}_{x}_{y}.ktx2`
+- Tile cache with LRU eviction policy
+- Async tile loading based on visible nodes (prioritize by screen area)
+- Fallback to coarser tiles while loading (prevents holes)
+- Memory budget configuration and monitoring
+- Tile request coalescing (avoid redundant fetches)
+
+**Files:**
+- `scripts/generate-tiles.sh` (new)
+- `src/terrain/TileCache.ts` (new)
+- `src/terrain/TileLoader.ts` (new)
+- `src/terrain/StreamingManager.ts` (new)
+- Update `src/terrain/TerrainRenderer.ts`
+
+**Acceptance Criteria:**
+- Can render with texture data exceeding GPU memory
+- No visible "pop-in" (coarse tiles shown during load)
+- Memory usage stays within configured budget
+- Tile loading prioritizes visible/important areas
+
+---
+
+## Milestone Summary
+
+| Phase | Milestone | Focus | Dependencies |
+|-------|-----------|-------|--------------|
+| 1 | M8 | Quadtree data structure | M7 (existing textured sphere) |
+| 1 | M9 | LOD selection & frustum culling | M8 |
+| 1 | M10 | Debug visualization | M9 |
+| 2 | M11 | Static grid mesh & instancing | M9 |
+| 2 | M12 | Cube-to-sphere projection | M11 |
+| 2 | M13 | Heightmap displacement | M12 |
+| 3 | M14 | Distance-based blend geomorphing | M13 |
+| 3 | M15 | Full per-vertex geomorphing | M14 |
+| 3 | M16 | Analytic normal reconstruction | M15 |
+| 4 | M17 | Biquadratic B-spline sampling | M16 |
+| 4 | M18 | Hapke BRDF | M17 |
+| 5 | M19 | Tile-based texture streaming | M18 |
+
+## Testing Strategy
+
+Each milestone includes:
+
+1. **Unit tests** (Vitest): Pure functions, math utilities, data structures
+2. **Visual verification**: Manual inspection with debug tools from M10
+3. **Performance benchmarks**: Frame time logging, node count tracking
+4. **Regression tests**: Screenshot comparison at key camera positions (after M13)
+
+## Performance Targets
+
+| Milestone | Target | Notes |
+|-----------|--------|-------|
+| M10 (Debug) | 60 FPS | Wireframe only, minimal GPU load |
+| M13 (Displaced) | 60 FPS | Single displacement texture, no streaming |
+| M16 (Analytic) | 45+ FPS | Per-pixel normal calculation overhead |
+| M18 (Hapke) | 30+ FPS | Complex BRDF, acceptable for accuracy |
+| M19 (Streaming) | 30+ FPS | I/O-bound, depends on tile cache hit rate |
+
+---
+
+# Part 5: Solar System Geometry Subsystem (Unscheduled)
+
+This section defines milestones for the Solar System Geometry Subsystem based on the technical specification in [Solar System Geometry Subsystem.md](Solar%20System%20Geometry%20Subsystem.md).
+
+**Status:** Unscheduled — these milestones can be interleaved with or run parallel to CDLOD implementation depending on priorities.
+
+## Design Reference
+
+The subsystem acts as the "truth source" for astronomical calculations, decoupled from the rendering pipeline. It provides:
+
+- **Temporal Framework**: Julian Date, Julian Centuries, Sidereal Time
+- **Solar Ephemeris**: Sun's geocentric position
+- **Lunar Ephemeris**: Moon's position with perturbations (1-2 arcminute accuracy)
+- **Observer Bridge**: Topocentric corrections, parallax, atmospheric refraction
+- **Visual Phenomena**: Phase angle, orientation, angular diameter
+
+## Implementation Decisions
+
+Based on developer interview:
+
+| Aspect | Decision |
+|--------|----------|
+| Use Cases | Realistic lighting, educational visualization, time-lapse animation |
+| Accuracy | 1-2 arcminutes (Meeus truncation) |
+| API Model | Query-based (calculate positions for given timestamp) |
+| Validation | Manual spot-check against JPL Horizons or similar |
+| Integration | Decoupled subsystem, renderer queries as needed |
+| Viewpoints | Both Moon-centric and Earth observer supported |
+
+---
+
+## E1 — Temporal Framework
+
+**Goal:** Implement time conversion utilities required by all ephemeris calculations.
+
+**Deliverables:**
+- `JulianDate` class or utility functions:
+  - `toJulianDate(year, month, day, hour, minute, second)`: Gregorian to JD conversion
+  - Handle calendar shift (months ≤ 2 treated as previous year)
+  - Fractional day from hours/minutes/seconds
+- `toJulianCenturies(jd)`: Calculate T = (JD - 2451545.0) / 36525.0
+- `calculateGMST(jd)`: Greenwich Mean Sidereal Time
+- `calculateLST(gmst, longitude)`: Local Sidereal Time
+- Unit tests against known reference values (e.g., J2000.0 epoch)
+
+**Files:**
+- `src/ephemeris/JulianDate.ts` (new)
+- `src/ephemeris/SiderealTime.ts` (new)
+- `tests/julian-date.test.ts` (new)
+- `tests/sidereal-time.test.ts` (new)
+
+**Acceptance Criteria:**
+- J2000.0 epoch (2000-01-01 12:00 TT) returns JD 2451545.0
+- GMST calculation matches reference within 1 second
+- LST correctly incorporates observer longitude
+
+---
+
+## E2 — Solar Ephemeris
+
+**Goal:** Calculate the Sun's geocentric position for any date/time.
+
+**Deliverables:**
+- `SolarEphemeris` class with `calculate(jd)` method returning:
+  - Ecliptic longitude (λ)
+  - Right Ascension (α)
+  - Declination (δ)
+  - Distance (r, in AU)
+- Mean elements: Mean Longitude (L₀), Mean Anomaly (M)
+- Equation of Center (C) using sine series
+- Obliquity of the ecliptic (ε) as function of T
+- Ecliptic-to-Equatorial coordinate conversion
+- Unit tests against known solar positions
+
+**Files:**
+- `src/ephemeris/SolarEphemeris.ts` (new)
+- `src/ephemeris/CoordinateConversion.ts` (new)
+- `tests/solar-ephemeris.test.ts` (new)
+
+**Acceptance Criteria:**
+- Solar position matches reference data within 1 arcminute
+- Correct handling of full year cycle (solstices, equinoxes)
+- Obliquity calculation accurate to 0.01°
+
+---
+
+## E3 — Lunar Ephemeris
+
+**Goal:** Calculate the Moon's geocentric position with perturbations.
+
+**Deliverables:**
+- `LunarEphemeris` class with `calculate(jd)` method returning:
+  - Geocentric longitude (λ)
+  - Geocentric latitude (β)
+  - Right Ascension (α)
+  - Declination (δ)
+  - Distance (Δ, in km)
+  - Horizontal parallax (HP)
+- Fundamental arguments: L′ (mean longitude), D (elongation), M′ (anomaly), F (latitude argument)
+- Major perturbations (Meeus truncation):
+  - Principal term: 6.289° sin(M′)
+  - Evection: 1.274° sin(2D - M′)
+  - Variation: 0.658° sin(2D)
+  - Annual equation: -0.186° sin(M) (solar mean anomaly)
+  - Additional terms for 1-2 arcminute accuracy
+- Latitude perturbations for β
+- Unit tests against known lunar positions
+
+**Files:**
+- `src/ephemeris/LunarEphemeris.ts` (new)
+- `tests/lunar-ephemeris.test.ts` (new)
+
+**Acceptance Criteria:**
+- Lunar position matches reference data within 2 arcminutes
+- Correct lunar distance (perigee ~356,500 km, apogee ~406,700 km)
+- Horizontal parallax varies correctly with distance
+
+---
+
+## E4 — Observer Bridge (Topocentric Corrections)
+
+**Goal:** Convert geocentric coordinates to observer-specific topocentric coordinates.
+
+**Deliverables:**
+- `Observer` class: latitude, longitude, altitude
+- `toHorizontal(ra, dec, lst, latitude)`: Equatorial to Altitude/Azimuth conversion
+  - Local Hour Angle: H = LST - α
+  - Spherical trigonometry for Alt/Az
+- `applyParallax(altitude, horizontalParallax)`: Topocentric altitude correction
+  - h′ = h - HP × cos(h)
+  - Moon only (Sun parallax negligible)
+- `applyRefraction(altitude)`: Atmospheric refraction correction
+  - Bennett's or Sæmundsson's formula
+  - ~34 arcminutes at horizon, decreasing with altitude
+- Combined `toTopocentric(body, observer, jd)` convenience method
+
+**Files:**
+- `src/ephemeris/Observer.ts` (new)
+- `src/ephemeris/HorizontalCoordinates.ts` (new)
+- `src/ephemeris/Refraction.ts` (new)
+- `tests/topocentric.test.ts` (new)
+
+**Acceptance Criteria:**
+- Parallax shifts Moon position by up to 1° (verified at horizon)
+- Refraction adds ~0.57° at horizon
+- Rise/set times match reference within 1 minute
+
+---
+
+## E5 — Visual Phenomena
+
+**Goal:** Calculate rendering parameters for accurate Moon visualization.
+
+**Deliverables:**
+- `calculatePhaseAngle(sunPos, moonPos)`: Earth-Moon-Sun angle (i)
+- `calculateIlluminatedFraction(phaseAngle)`: k = (1 + cos(i)) / 2
+- `calculateBrightLimbAngle(sunEq, moonEq)`: Position angle of bright limb (χ)
+  - Direction to Sun relative to celestial North
+- `calculateParallacticAngle(hourAngle, latitude, declination)`: Angle between zenith and celestial North (q)
+- `calculateTextureRotation(chi, q)`: Final rotation = χ - q
+- `calculateAngularDiameter(distance)`:
+  - Sun: ~0.533° (nearly constant)
+  - Moon: ~0.518° (varies with distance)
+- `LunarPhase` enum: New, Waxing Crescent, First Quarter, etc.
+
+**Files:**
+- `src/ephemeris/LunarPhase.ts` (new)
+- `src/ephemeris/VisualPhenomena.ts` (new)
+- `tests/visual-phenomena.test.ts` (new)
+
+**Acceptance Criteria:**
+- Phase angle of 0° = Full Moon, 180° = New Moon
+- Texture rotation matches observed Moon orientation
+- Angular diameter varies correctly with lunar distance
+
+---
+
+## E6 — Integration Helpers
+
+**Goal:** Provide convenient adapters for the rendering system.
+
+**Deliverables:**
+- `EphemerisService` facade class:
+  - `getSunDirection(jd, observer?)`: Returns normalized Vec3 for DirectionalLight
+  - `getMoonPosition(jd, observer?)`: Returns world-space position
+  - `getLunarRenderParams(jd, observer?)`: Returns struct with phase, rotation, angular size
+- `AnimationClock` utility:
+  - Real-time mode: maps wall clock to simulation time
+  - Time-lapse mode: configurable speed multiplier
+  - Manual mode: explicit time setting
+- Tweakpane integration:
+  - Date/time picker
+  - Observer location input
+  - Time speed slider
+  - Current phase display
+
+**Files:**
+- `src/ephemeris/EphemerisService.ts` (new)
+- `src/ephemeris/AnimationClock.ts` (new)
+- Update `src/main.ts` with ephemeris UI controls
+
+**Acceptance Criteria:**
+- Sun direction vector correctly illuminates Moon surface
+- Time-lapse animation shows smooth phase progression
+- UI allows exploration of any date/time/location
+
+---
+
+## Ephemeris Milestone Summary
+
+| Milestone | Focus | Dependencies |
+|-----------|-------|--------------|
+| E1 | Temporal Framework (JD, Sidereal Time) | None |
+| E2 | Solar Ephemeris | E1 |
+| E3 | Lunar Ephemeris | E1 |
+| E4 | Observer Bridge (Topocentric) | E2, E3 |
+| E5 | Visual Phenomena (Phase, Orientation) | E2, E3 |
+| E6 | Integration Helpers | E4, E5 |
+
+## Integration with CDLOD
+
+The ephemeris subsystem integrates with CDLOD terrain rendering at these points:
+
+1. **Sun Direction (M18 Hapke BRDF)**: `EphemerisService.getSunDirection()` provides the light vector for physically accurate lunar lighting.
+
+2. **Texture Rotation (M7 Textured Sphere)**: For Earth-observer views, `getLunarRenderParams().textureRotation` orients the Moon correctly.
+
+3. **Phase Visualization**: The illuminated fraction can drive UI displays or shader effects.
+
+## Validation Approach
+
+Manual spot-check against reference sources:
+
+| Source | Use |
+|--------|-----|
+| [JPL Horizons](https://ssd.jpl.nasa.gov/horizons/) | High-precision ephemeris data |
+| [Stellarium](https://stellarium.org/) | Visual verification of Moon position/phase |
+| [timeanddate.com](https://www.timeanddate.com/moon/) | Moon phase and rise/set times |
+| [US Naval Observatory](https://aa.usno.navy.mil/data/RS_OneDay) | Sun/Moon rise/set times |
+
+Test dates should include:
+- Known lunar eclipses (verify alignment)
+- Solstices/equinoxes (verify solar position)
+- Perigee/apogee events (verify distance calculation)
+- Historical dates with documented observations
