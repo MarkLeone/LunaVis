@@ -306,20 +306,19 @@ describe('LODSelector', () => {
       expect(maxLod).toBeGreaterThan(0);
     });
 
-    it('RTE positions are relative to camera', () => {
+    it('Node origins are stored in UV space for flat patches', () => {
       const cameraPos = new Float64Array([0, 0, 5]);
       const frustum = createFrustum([0, 0, 5], [0, 0, 0]);
 
       const nodes = selector.selectNodes(tree, cameraPos, frustum);
 
-      // All RTE positions should have Z < 0 (nodes are in front of camera)
-      // Actually, the +Z face center is at (0,0,1), camera at (0,0,5)
-      // So RTE z = 1 - 5 = -4
+      // NodeData stores UV origin in relativeOrigin (u, v, 0) for M11.
       for (const node of nodes) {
-        if (node.faceId === 0) {
-          // +Z face
-          expect(node.relativeOrigin[2]).toBeLessThan(0);
-        }
+        expect(node.relativeOrigin[2]).toBe(0);
+        expect(node.relativeOrigin[0]).toBeGreaterThanOrEqual(0);
+        expect(node.relativeOrigin[0]).toBeLessThanOrEqual(1);
+        expect(node.relativeOrigin[1]).toBeGreaterThanOrEqual(0);
+        expect(node.relativeOrigin[1]).toBeLessThanOrEqual(1);
       }
     });
 
@@ -462,13 +461,14 @@ describe('NodeData packing', () => {
     ];
 
     const buffer = packNodeData(nodes);
+    const bufferU32 = new Uint32Array(buffer.buffer);
 
     expect(buffer[0]).toBeCloseTo(1.5);
     expect(buffer[1]).toBeCloseTo(-2.5);
     expect(buffer[2]).toBeCloseTo(3.5);
     expect(buffer[3]).toBeCloseTo(0.125);
-    expect(buffer[4]).toBe(5); // lodLevel
-    expect(buffer[5]).toBe(3); // faceId
+    expect(bufferU32[4]).toBe(5); // lodLevel
+    expect(bufferU32[5]).toBe(3); // faceId
     expect(buffer[6]).toBeCloseTo(0.8);
     expect(buffer[7]).toBeCloseTo(1.2);
   });

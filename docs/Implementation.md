@@ -175,16 +175,14 @@ renderLoop()
 
 ## Terrain Debug Mode (M10)
 
-Debug visualization renders CDLOD patches in wireframe with LOD coloring and optional bounding spheres. It uses a frozen camera captured when the toggle is enabled, and replaces normal rendering via `Viewer.setRenderOverride()`.
+Debug visualization renders CDLOD patches in solid or wireframe with LOD coloring. The CDLOD render source now uses the instanced terrain pipeline (M11) with a wireframe toggle driven by the global render mode.
 
 ### Debug Renderer Flow
 
-1. Capture camera state when debug mode toggles on.
-2. Each render:
-   - Select visible nodes via `DebugRenderer.selectNodes()`
-   - Upload per-node data to storage buffer
-   - Draw wireframe patches (and bounds if enabled)
-3. Overlay DOM widget shows node counts and per-level histogram.
+1. Update selection via `TerrainRenderer.selectNodes()`
+2. Upload per-node data to storage buffer
+3. Draw instanced patches with LOD-based coloring
+4. Overlay DOM widget shows node counts and per-level histogram
 
 ### Debug Node Data (32 bytes)
 
@@ -531,13 +529,26 @@ Frustum
 └── containsSphere()            # Full containment test
 
 NodeData (32 bytes, GPU-ready)
-├── relativeOrigin: vec3<f32>   # RTE position (12 bytes)
+├── relativeOrigin: vec3<f32>   # UV origin (u, v, 0) for flat cube patches (12 bytes)
 ├── scale: f32                  # Node size in UV space (4 bytes)
 ├── lodLevel: u32               # For mipmap selection (4 bytes)
 ├── faceId: u32                 # Cube face 0-5 (4 bytes)
 ├── morphStart: f32             # Morph zone start (4 bytes)
 └── morphEnd: f32               # LOD switch distance (4 bytes)
 ```
+
+### Terrain Rendering (M11)
+
+```
+TerrainRenderer
+├── GridMesh (indexed)          # Static N×N grid in 0..1 UV space
+├── nodeBuffer                  # Storage buffer with NodeData[]
+├── configBuffer                # maxLodLevel for debug coloring
+├── terrain-flat.wgsl           # Flat cube-face placement + LOD color
+└── drawIndexed(...)            # One instanced draw call for all patches
+```
+
+**Vertex flow:** `gridUV` → `uvOrigin + gridUV * scale` → `uvToCubePos(faceId, uv)` → clip space.
 
 ### LOD Range Calculation
 
@@ -579,7 +590,7 @@ selectRecursive(node, cameraPos, frustum, results):
       selectRecursive(child, ...)
   else:
     node.collapse() if subdivided
-    results.push(createNodeData(node, cameraPos))
+    results.push(createNodeData(node))
 ```
 
 ### Frustum Plane Extraction

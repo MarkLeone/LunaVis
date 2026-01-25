@@ -1,12 +1,13 @@
 import type { RenderMode, RenderSource, FrameContext } from '@/core/RenderSource';
-import { DebugRenderer, type TerrainDebugConfig, type DebugRenderStats } from './DebugRenderer';
+import { TerrainRenderer } from './TerrainRenderer';
+import type { TerrainDebugConfig, DebugRenderStats } from './DebugRenderer';
 
 type OverlayCallback = (stats: DebugRenderStats | null) => void;
 
 export class CDLODRenderSource implements RenderSource {
   readonly name = 'CDLOD';
 
-  private readonly renderer: DebugRenderer;
+  private readonly renderer: TerrainRenderer;
   private mode: RenderMode = 'solid';
   private overlayCallback: OverlayCallback | null = null;
   private hasSelection = false;
@@ -17,13 +18,13 @@ export class CDLODRenderSource implements RenderSource {
     globalBindGroupLayout: GPUBindGroupLayout,
     config?: Partial<TerrainDebugConfig>
   ) {
-    this.renderer = new DebugRenderer(config);
+    this.renderer = new TerrainRenderer(config);
     this.renderer.init(device, format, globalBindGroupLayout);
   }
 
   setRenderMode(mode: RenderMode): void {
     this.mode = mode;
-    this.renderer.setConfig({ wireframeMode: mode === 'wireframe' });
+    this.renderer.setRenderMode(mode);
   }
 
   setConfig(config: Partial<TerrainDebugConfig>): void {

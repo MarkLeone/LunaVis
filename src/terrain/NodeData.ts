@@ -28,14 +28,13 @@ export const NODE_DATA_FLOATS = 8;
 /**
  * GPU-ready node data for instanced terrain rendering.
  *
- * All positions use Relative-to-Eye (RTE) coordinates to maintain
- * float32 precision at planetary scales.
+ * For M11 (flat cube patches), relativeOrigin stores the UV origin
+ * on the cube face as (u, v, 0). Later milestones can repurpose this
+ * field for RTE positions as the sphere projection is introduced.
  */
 export interface NodeData {
   /**
-   * Node center position relative to camera (RTE).
-   * Computed as: nodeWorldCenter - cameraPosition
-   * This keeps values small enough for float32 precision.
+   * Node UV origin on the cube face (u, v, 0) for flat patch placement.
    */
   readonly relativeOrigin: readonly [number, number, number];
 
@@ -81,7 +80,9 @@ export interface NodeData {
  * @returns Float32Array ready for GPU upload
  */
 export function packNodeData(nodes: readonly NodeData[]): Float32Array {
-  const buffer = new Float32Array(nodes.length * NODE_DATA_FLOATS);
+  const arrayBuffer = new ArrayBuffer(nodes.length * NODE_DATA_SIZE);
+  const buffer = new Float32Array(arrayBuffer);
+  const bufferU32 = new Uint32Array(arrayBuffer);
 
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i]!;
@@ -95,11 +96,11 @@ export function packNodeData(nodes: readonly NodeData[]): Float32Array {
     // scale: f32 (4 bytes)
     buffer[offset + 3] = node.scale;
 
-    // lodLevel: u32 (4 bytes) - reinterpret as float for storage
-    buffer[offset + 4] = node.lodLevel;
+    // lodLevel: u32 (4 bytes)
+    bufferU32[offset + 4] = node.lodLevel >>> 0;
 
-    // faceId: u32 (4 bytes) - reinterpret as float for storage
-    buffer[offset + 5] = node.faceId;
+    // faceId: u32 (4 bytes)
+    bufferU32[offset + 5] = node.faceId >>> 0;
 
     // morphStart: f32 (4 bytes)
     buffer[offset + 6] = node.morphStart;
@@ -126,6 +127,8 @@ export function packNodeDataInto(
   buffer: Float32Array,
   offset: number = 0
 ): number {
+  const bufferU32 = new Uint32Array(buffer.buffer, buffer.byteOffset, buffer.length);
+
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i]!;
     const idx = offset + i * NODE_DATA_FLOATS;
@@ -134,8 +137,8 @@ export function packNodeDataInto(
     buffer[idx + 1] = node.relativeOrigin[1];
     buffer[idx + 2] = node.relativeOrigin[2];
     buffer[idx + 3] = node.scale;
-    buffer[idx + 4] = node.lodLevel;
-    buffer[idx + 5] = node.faceId;
+    bufferU32[idx + 4] = node.lodLevel >>> 0;
+    bufferU32[idx + 5] = node.faceId >>> 0;
     buffer[idx + 6] = node.morphStart;
     buffer[idx + 7] = node.morphEnd;
   }
@@ -153,6 +156,7 @@ export function packNodeDataInto(
  * @returns Array of NodeData
  */
 export function unpackNodeData(buffer: Float32Array, count: number): NodeData[] {
+  const bufferU32 = new Uint32Array(buffer.buffer, buffer.byteOffset, buffer.length);
   const nodes: NodeData[] = [];
 
   for (let i = 0; i < count; i++) {
@@ -165,8 +169,8 @@ export function unpackNodeData(buffer: Float32Array, count: number): NodeData[] 
         buffer[offset + 2]!,
       ],
       scale: buffer[offset + 3]!,
-      lodLevel: buffer[offset + 4]!,
-      faceId: buffer[offset + 5]! as FaceId,
+      lodLevel: bufferU32[offset + 4]!,
+      faceId: bufferU32[offset + 5]! as FaceId,
       morphStart: buffer[offset + 6]!,
       morphEnd: buffer[offset + 7]!,
     });

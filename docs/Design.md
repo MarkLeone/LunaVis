@@ -185,6 +185,14 @@ for (lod = 0; lod <= maxLod; lod++) {
 
 **Rationale:** Provides smooth transition without excessive blending overhead. Smaller zones (10%) cause visible popping; larger zones (30%+) waste GPU time on unnecessary blending.
 
+### Instanced Terrain Rendering (M11)
+
+**Decision:** Render CDLOD patches via instanced, indexed grid mesh on cube faces (flat for M11).
+
+**Rationale:** Instancing reuses a single static grid topology while per-node data controls placement, enabling a single draw call for all visible patches. Per-face placement validates cube mapping before sphere projection in M12.
+
+**Debug Output:** LOD-based coloring in the fragment shader to visualize selection quality.
+
 ### Relative-to-Eye (RTE) Coordinates
 
 **Decision:** Compute camera-relative positions on CPU, pass to GPU as float32.

@@ -1,5 +1,27 @@
 # LunaVis Development Log
 
+## 2026-02-01: M11 Instanced Terrain Rendering ✓
+
+**Goal:** Render many CDLOD patches via a single instanced draw call (flat cube faces).
+
+**Completed:**
+- Added `TerrainRenderer` with instanced indexed grid mesh and NodeData storage buffer
+- Implemented `terrain-flat.wgsl` (per-face flat cube placement + LOD debug coloring)
+- Integrated CDLOD render source with new terrain pipeline
+- Updated NodeData packing to respect u32 fields for `lodLevel` and `faceId`
+
+**Files Created/Updated:**
+```
+src/terrain/GridMesh.ts           # Indexed grid generator (N×N)
+src/terrain/TerrainRenderer.ts    # Instanced rendering pipeline
+src/shaders/terrain-flat.wgsl     # Flat cube-face shader with LOD colors
+src/terrain/CDLODRenderSource.ts  # Uses TerrainRenderer
+src/terrain/NodeData.ts           # Correct u32 packing
+src/terrain/LODSelector.ts        # UV-origin NodeData for flat patches
+```
+
+**Verification:** CDLOD model renders flat cube-face patches with LOD-based coloring; single draw call per frame.
+
 ## 2026-01-24: Project Inception & M1 Complete
 
 ### Requirements Gathering

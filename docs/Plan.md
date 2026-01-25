@@ -1005,15 +1005,38 @@ Based on developer interview:
 
 ### M11 — Static Grid Mesh & Instanced Rendering
 
-**Goal:** GPU infrastructure for rendering many terrain patches with a single draw call.
+**Goal:** GPU infrastructure for rendering many terrain patches with a single draw call, using per-face placement that anticipates M12.
 
-**Deliverables:**
-- Static N×N grid mesh generator (32×32 recommended, configurable)
-- Single `GPUBuffer` for grid vertex positions (0..1 UV space)
-- `StorageBuffer` for `NodeData` array (uploaded each frame)
-- Instanced draw call using `@builtin(instance_index)`
-- Vertex shader: position grid vertices using `NodeData.relativeOrigin` and `scale`
-- Render flat patches on unit cube (no sphere projection yet)
+**Detailed Plan:**
+1. **Grid mesh (indexed, reusable)**
+   - Create a static N×N grid in 0..1 UV space, default N=32 and configurable.
+   - Build **indexed triangles** (index buffer) to reduce vertex data and keep topology explicit.
+   - Create a single vertex buffer (grid UV/position) and a single index buffer; reuse for all instances.
+
+2. **NodeData storage layout**
+   - Define `NodeData` for instancing with 16-byte alignment:
+     - `relativeOrigin: vec3<f32>`
+     - `scale: f32`
+     - `lodLevel: u32`
+     - `faceID: u32`
+     - padding as needed
+   - Pack visible nodes each frame into a `StorageBuffer` (`GPUBufferUsage.STORAGE | COPY_DST`).
+
+3. **Instanced draw path**
+   - Implement a terrain renderer that:
+     - Uploads the node buffer each frame
+     - Binds grid buffers once
+     - Issues **one** `drawIndexed(indexCount, instanceCount)` call
+   - `instanceCount` must match `selectVisibleNodes()` output.
+
+4. **Per-face flat placement (M12-friendly)**
+   - Vertex shader reads `NodeData[instance_index]`.
+   - Map grid UVs to the correct cube face using `faceID` (flat cube mapping, no sphere projection yet).
+   - Position vertices with `relativeOrigin + (gridUV * scale)` in face space.
+   - Apply existing global view-projection matrix (Group 0).
+
+5. **LOD debug coloring**
+   - Fragment shader outputs color based on `lodLevel` for immediate verification.
 
 **Files:**
 - `src/terrain/GridMesh.ts` (new)
@@ -1022,8 +1045,9 @@ Based on developer interview:
 
 **Acceptance Criteria:**
 - Single draw call renders all visible patches
-- Patches appear as flat quads on cube faces
+- Patches appear as flat quads on all 6 cube faces
 - Instance count matches `selectVisibleNodes()` output
+- LOD-based debug coloring clearly reflects selection
 
 ---
 

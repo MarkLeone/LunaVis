@@ -7,8 +7,7 @@
  * Uses screen-space error metric to derive LOD thresholds, ensuring consistent
  * visual quality across different resolutions and FOV settings.
  *
- * All distance calculations use double precision to maintain accuracy at
- * planetary scales.
+ * Distance calculations use double precision for stable LOD decisions.
  */
 
 import { QuadTree } from './QuadTree';
@@ -74,9 +73,6 @@ const DEFAULT_CONFIG: LODConfig = {
   maxLodLevel: 12,
   morphRatio: 0.8,
 };
-
-/** Maximum RTE magnitude before precision warning */
-const MAX_RTE_MAGNITUDE = 1e6;
 
 /**
  * Statistics about the last selection pass.
@@ -203,13 +199,13 @@ export class LODSelector {
    *
    * @param tree - Quadtree to traverse
    * @param cameraPos - Camera position in world space (double precision)
-   * @param frustum - View frustum for culling
+   * @param frustum - View frustum for culling (null = disable culling)
    * @returns Array of NodeData for visible nodes
    */
   selectNodes(
     tree: QuadTree,
     cameraPos: Float64Array,
-    frustum: Frustum
+    frustum: Frustum | null
   ): NodeData[] {
     // Reset stats
     this._stats = this.createEmptyStats();
@@ -236,16 +232,18 @@ export class LODSelector {
   private selectNodeRecursive(
     node: QuadNode,
     cameraPos: Float64Array,
-    frustum: Frustum,
+    frustum: Frustum | null,
     results: NodeData[]
   ): void {
     this._stats.nodesVisited++;
 
     // 1. Frustum culling (early out)
-    const sphere = node.boundingSphere;
-    if (!frustum.intersectsSphere(sphere.center, sphere.radius)) {
-      this._stats.nodesCulled++;
-      return; // Entire subtree culled
+    if (frustum) {
+      const sphere = node.boundingSphere;
+      if (!frustum.intersectsSphere(sphere.center, sphere.radius)) {
+        this._stats.nodesCulled++;
+        return; // Entire subtree culled
+      }
     }
 
     // 2. Calculate distance from camera to node center (double precision)
@@ -255,7 +253,7 @@ export class LODSelector {
     const range = this._ranges[node.lodLevel];
     if (!range) {
       // Beyond max LOD, render this node
-      this.addNodeToResults(node, cameraPos, dist, results);
+      this.addNodeToResults(node, dist, results);
       return;
     }
 
@@ -279,7 +277,7 @@ export class LODSelector {
         node.collapse();
       }
 
-      this.addNodeToResults(node, cameraPos, dist, results);
+      this.addNodeToResults(node, dist, results);
     }
   }
 
@@ -288,24 +286,10 @@ export class LODSelector {
    */
   private addNodeToResults(
     node: QuadNode,
-    cameraPos: Float64Array,
     distance: number,
     results: NodeData[]
   ): void {
-    // Compute RTE position (double → float32)
-    const center = node.sphereCenter;
-    const rteX = center[0]! - cameraPos[0]!;
-    const rteY = center[1]! - cameraPos[1]!;
-    const rteZ = center[2]! - cameraPos[2]!;
-
-    // Validate float32 precision
-    const rteMagnitude = Math.sqrt(rteX * rteX + rteY * rteY + rteZ * rteZ);
-    if (rteMagnitude > MAX_RTE_MAGNITUDE) {
-      console.warn(
-        `[LODSelector] RTE magnitude ${rteMagnitude.toExponential(2)} exceeds safe float32 range. ` +
-          `Node ${node.id} may have precision issues.`
-      );
-    }
+    const origin = node.origin;
 
     // Get morph range for this LOD level
     const range = this._ranges[node.lodLevel];
@@ -313,7 +297,7 @@ export class LODSelector {
     const morphEnd = range?.distance ?? distance;
 
     const nodeData: NodeData = {
-      relativeOrigin: [rteX, rteY, rteZ],
+      relativeOrigin: [origin[0]!, origin[1]!, 0],
       scale: node.size,
       lodLevel: node.lodLevel,
       faceId: node.faceId as FaceId,
