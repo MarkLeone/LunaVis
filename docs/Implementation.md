@@ -49,17 +49,24 @@ The build process runs `scripts/download-assets.sh`, which discovers and execute
 Viewer
 ├── Scene (root Object3D)
 │   └── Mesh[] (extends Object3D)
-│       ├── Geometry (positions, normals, indices → GPU buffers)
-│       └── SolidMaterial (color, shininess → pipeline + bind group)
+│       ├── Geometry (positions, normals, uvs?, indices → GPU buffers)
+│       └── Material (SolidMaterial | TexturedMaterial)
 ├── Camera (position, target → view/projection matrices)
-└── DirectionalLight (direction, color, intensity)
+├── DirectionalLight (direction, color, intensity)
+└── OrbitControls (spherical coords → camera updates)
+
+GLTFLoader
+├── load(url) → GLTFLoadResult { meshes, textures }
+├── extractMesh() → creates Geometry + Material
+└── generateFlatNormals() → fallback when NORMAL missing
 ```
 
 **Data flow:**
-1. `Viewer.addMesh()` triggers `Mesh.createGPUResources()`
-2. `OrbitControls` updates `Camera` position/target
-3. Camera/control changes call `Viewer.requestRender()`
-4. `renderLoop()` writes uniforms and issues draw calls
+1. `GLTFLoader.load()` parses glTF, creates Meshes with Geometry + Material
+2. `Viewer.addMesh()` triggers `Mesh.createGPUResources()`
+3. `OrbitControls` updates `Camera` position/target
+4. Camera/control changes call `Viewer.requestRender()`
+5. `renderLoop()` writes uniforms and issues draw calls
 
 ## Coordinate System
 
@@ -164,12 +171,15 @@ renderLoop()
 
 ### Vertex Buffer Layout
 
-| Slot | Buffer | Stride | Format |
-|------|--------|--------|--------|
-| 0 | positions | 12 bytes | float32x3 |
-| 1 | normals | 12 bytes | float32x3 |
+| Slot | Buffer | Stride | Format | Required |
+|------|--------|--------|--------|----------|
+| 0 | positions | 12 bytes | float32x3 | Yes |
+| 1 | normals | 12 bytes | float32x3 | Yes |
+| 2 | uvs | 8 bytes | float32x2 | No (textured only) |
 
 Index buffer: Uint16 or Uint32 depending on vertex count.
+
+**Geometry.hasUVs**: Returns true if UV coordinates are present. Used to select appropriate material/shader.
 
 ## Shader Structure
 
@@ -187,6 +197,138 @@ Index buffer: Uint16 or Uint32 depending on vertex count.
 - Diffuse: `lightColor * materialColor * max(dot(N, L), 0)`
 - Specular: `lightColor * pow(max(dot(N, H), 0), shininess)`
 - Output: `ambient + diffuse + specular`
+
+## GLTFLoader
+
+Thin wrapper around `@loaders.gl/gltf` for loading glTF/GLB files.
+
+### Load Flow
+
+```
+load(url, options)
+    │
+    ▼
+[loaders.gl parses glTF + buffers + images]
+    │
+    ▼
+postProcessGLTF() → typed accessors
+    │
+    ▼
+For each mesh primitive:
+├── Extract POSITION → Float32Array
+├── Extract NORMAL (or generate flat normals)
+├── Extract TEXCOORD_0 → Float32Array (optional)
+├── Extract indices → Uint16/Uint32Array
+├── Create Geometry
+├── Create Material (Textured if GPU texture available, else Solid)
+└── Return Mesh
+```
+
+### Flat Normal Generation
+
+When NORMAL attribute is missing, generates face normals:
+
+```typescript
+for each triangle (i0, i1, i2):
+    edge1 = positions[i1] - positions[i0]
+    edge2 = positions[i2] - positions[i0]
+    normal = normalize(cross(edge1, edge2))
+    normals[i0] = normals[i1] = normals[i2] = normal
+```
+
+### Auto-Framing
+
+After loading, main.ts computes bounding box and positions camera:
+
+```typescript
+// Compute combined bounds across all meshes
+for each mesh:
+    for each position vertex:
+        min = componentMin(min, position)
+        max = componentMax(max, position)
+
+center = (min + max) / 2
+size = max(max.x - min.x, max.y - min.y, max.z - min.z)
+
+// Position camera along +Z axis
+camera.position = [center.x, center.y, center.z + size * 2.5]
+camera.target = center
+orbitControls.reset(center)
+```
+
+## TexturedMaterial
+
+Blinn-Phong material with texture sampling.
+
+### Uniforms (Group 1, 32 bytes)
+
+```
+Offset  Size  Field
+──────  ────  ─────
+0       16    color: vec4<f32>        (multiplier)
+16      4     shininess: f32
+20      4     specularIntensity: f32  (0 = diffuse only)
+24      8     (padding)
+```
+
+### Bind Group Layout
+
+| Binding | Resource | Description |
+|---------|----------|-------------|
+| 0 | Sampler | Trilinear filtering, repeat wrap |
+| 1 | Texture View | Base color texture |
+| 2 | Uniform Buffer | color, shininess, specularIntensity |
+
+### Texture Creation
+
+```typescript
+async function createTextureFromImage(
+    device: GPUDevice,
+    image: ImageBitmap | HTMLImageElement
+): Promise<GPUTexture>
+```
+
+- Creates texture with `rgba8unorm` format
+- Generates mipmaps via `copyExternalImageToTexture`
+- Returns texture ready for bind group
+
+## OrbitControls
+
+Spherical coordinate camera controller.
+
+### State
+
+```typescript
+_radius: number      // Distance from target
+_polar: number       // Angle from +Y axis (0 = top, π = bottom)
+_azimuth: number     // Rotation around Y axis
+_target: Vec3        // Orbit center point
+```
+
+### Input Handling
+
+| Input | Action |
+|-------|--------|
+| Left drag | Orbit (adjust polar/azimuth) |
+| Right drag | Pan (move target in screen plane) |
+| Scroll | Zoom (adjust radius) |
+
+### reset(newTarget?)
+
+Syncs spherical coordinates to current camera position after programmatic changes:
+
+```typescript
+reset(newTarget?: Vec3): void {
+    if (newTarget) this._target = newTarget;
+
+    offset = camera.position - this._target
+    this._radius = length(offset)
+    this._polar = acos(offset.y / radius)
+    this._azimuth = atan2(offset.x, offset.z)
+}
+```
+
+Call after `camera.setPosition()` or `camera.target = ...` to keep controls in sync.
 
 ## Type System
 

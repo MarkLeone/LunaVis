@@ -173,11 +173,55 @@ Face 5 (-Y): bottom
 
 **Rationale:** Consistent with glTF and existing camera/scene conventions. No coordinate conversion needed.
 
+## glTF Loading (M5)
+
+### Loader Library
+
+**Decision:** Use `@loaders.gl/gltf` rather than custom parser or three.js loader.
+
+**Rationale:** loaders.gl provides typed accessor unpacking, handles binary GLB format, and integrates well with TypeScript. Lighter weight than three.js for our needs.
+
+### Auto-Framing
+
+**Decision:** Automatically position camera based on model bounding box.
+
+**Rationale:** Models vary wildly in scale. Computing bounds and positioning camera at 2.5× model size ensures any model is visible without manual adjustment.
+
+### Flat Normal Generation
+
+**Decision:** Generate flat (faceted) normals when NORMAL attribute is missing.
+
+**Rationale:** Many glTF models omit normals. Flat normals from cross product of triangle edges provide acceptable shading rather than failing to load.
+
+### Camera-Following Light
+
+**Decision:** Light direction computed relative to camera (upper-left shoulder).
+
+**Rationale:** Provides consistent illumination as user orbits. Direction = `-right*0.4 + up*0.4 + view*0.8` gives natural "over the shoulder" lighting.
+
+## Textured Materials (M7)
+
+### Specular Intensity Control
+
+**Decision:** Add `specularIntensity` uniform (0-1) to control specular contribution.
+
+**Rationale:** Lunar regolith is purely diffuse — setting `specularIntensity: 0` disables specular without changing the shader. More flexible than separate shader variants.
+
+### UV Coordinates
+
+**Decision:** Optional UV support in Geometry class, extracted from `TEXCOORD_0`.
+
+**Rationale:** Not all models have textures. Optional UVs keep the solid-color path simple while enabling textured rendering when available.
+
+### Texture Loading Pipeline
+
+**Decision:** GLTFLoader creates GPU textures directly when device is provided.
+
+**Rationale:** Centralizes texture creation in the loader. Images are loaded via loaders.gl, then converted to GPUTexture with mipmaps. Avoids passing raw images around.
+
 ## Future Considerations
 
 These decisions may need revisiting:
 
 - **Multiple materials per mesh** — Currently 1:1. glTF models often have submeshes.
 - **Instanced rendering** — Not implemented. Would help with repeated geometry.
-- **Texture support** — Currently solid colors only. Diffuse/normal maps planned.
-- **Multiple lights** — Single directional light. Point lights, spotlights deferred.
