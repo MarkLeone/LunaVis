@@ -277,3 +277,30 @@ worldMatrix = parent.worldMatrix * localMatrix
 Matrices are cached and recomputed only when:
 - Local transform changes → `_matrixNeedsUpdate = true`
 - Parent world matrix changes → `_worldMatrixNeedsUpdate = true` (propagates to children)
+
+## Lunar Texture Formats
+
+### Color/Albedo Map (M7)
+
+| Aspect | Decision | Rationale |
+|--------|----------|-----------|
+| Bit depth | 8-bit | sRGB encoding provides 12-bit perceptual precision |
+| Color space | sRGB | GPU linearizes on sample (hardware accelerated) |
+| Container | KTX2 | Pre-baked mipmaps, Zstd compression |
+| Compression | Zstd (lossless) | Preserves albedo values exactly |
+
+**Conversion command:**
+```bash
+ktx create --format R8G8B8_SRGB --generate-mipmap --zstd 19 output.ktx2 input.png
+```
+
+### Displacement Map (M13)
+
+| Aspect | Decision | Rationale |
+|--------|----------|-----------|
+| Bit depth | 16-bit | Terrain precision requires full dynamic range |
+| Format | TIFF (source) | Read directly, no conversion loss |
+| Processing | Vertex shader | CDLOD samples heightmap per-vertex with explicit mip selection |
+| Mipmaps | Pre-generated | One mip per LOD level for anti-aliasing |
+
+The displacement map is sampled in the vertex shader using `textureSampleLevel()` with explicit mip selection based on the current LOD level.

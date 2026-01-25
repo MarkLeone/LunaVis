@@ -768,107 +768,19 @@ Using the NASA CGI Moon Kit from Sketchfab (CC-BY-4.0, Thomas Flynn):
 
 ---
 
-## M8: GPU-Displaced Moon Terrain (Future)
+## ~~M8: GPU-Displaced Moon Terrain~~ (Superseded)
 
-**Goal**: Generate a crack-free displaced triangle mesh using a WebGPU compute shader, reading the displacement map directly on the GPU with zero-copy to the vertex stage.
+> **Note:** This milestone has been superseded by the CDLOD implementation plan in Part 4 (M8-M19). The compute-shader tessellation approach described here was replaced with a more comprehensive quadtree-based CDLOD system with vertex morphing.
 
-### Architecture Overview
+~~**Goal**: Generate a crack-free displaced triangle mesh using a WebGPU compute shader.~~
 
-```
-                                    +------------------+
- Displacement Map (Texture) ------> | Compute Shader   |
-                                    | (Tessellation)   |
-                                    +--------+---------+
-                                             |
-                                             v
-                                    +------------------+
-                                    | Storage Buffer   | <-- VERTEX | STORAGE usage
-                                    | (Positions/Norms)|
-                                    +--------+---------+
-                                             |
-                                             v
-                                    +------------------+
-                                    | Render Pipeline  |
-                                    | (Vertex Shader)  |
-                                    +------------------+
-```
-
-### Key Technical Challenges
-
-#### 1. Crack-Free Tessellation
-
-Adjacent tiles at different LODs create T-junctions that cause cracks. Solutions:
-
-- **Uniform tessellation**: Same subdivision everywhere (simple, expensive)
-- **Restricted quadtree**: Adjacent tiles differ by at most 1 LOD level; stitch edges
-- **CDLOD** (Continuous Distance-Dependent LOD): Morph vertices between LOD levels
-
-Recommended: Start with uniform tessellation, add LOD later.
-
-#### 2. Camera-Aware LOD
-
-For real-time LOD:
-
-- Compute shader checks distance from camera to each tile
-- Outputs vertex count for indirect draw
-- Uses `drawIndexedIndirect()` with GPU-generated counts
-
-#### 3. Displacement Sampling Without Aliasing
-
-- Use `textureSampleLevel()` with explicit mip level based on tessellation density
-- Pre-filter displacement map (gaussian blur for lower mips)
-- Consider bicubic filtering in shader for smooth results
-
-#### 4. Zero-Copy Buffer Strategy
-
-```typescript
-const vertexBuffer = device.createBuffer({
-  size: maxVertices * VERTEX_STRIDE,
-  usage: GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE,
-});
-```
-
-Compute shader writes to storage buffer; same buffer used as vertex input.
-
-### Compute Shader Outline
-
-```wgsl
-@group(0) @binding(0) var displacementMap: texture_2d<f32>;
-@group(0) @binding(1) var<storage, read_write> vertices: array<Vertex>;
-@group(0) @binding(2) var<uniform> params: TessParams;
-
-@compute @workgroup_size(8, 8)
-fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-    let uv = vec2<f32>(id.xy) / vec2<f32>(params.gridSize);
-    let height = textureSampleLevel(displacementMap, sampler, uv, 0.0).r;
-    
-    // Spherical coordinates from UV
-    let theta = uv.x * 2.0 * PI;  // longitude
-    let phi = uv.y * PI;          // latitude (0=north pole, PI=south)
-    
-    // Base position on unit sphere
-    let sinPhi = sin(phi);
-    let pos = vec3(sinPhi * cos(theta), cos(phi), sinPhi * sin(theta));
-    
-    // Apply displacement
-    let radius = params.baseRadius + height * params.heightScale;
-    let displaced = pos * radius;
-    
-    // Write vertex (compute normal from adjacent samples for accuracy)
-    vertices[id.y * params.gridSize.x + id.x] = Vertex(displaced, normal, uv);
-}
-```
-
-### Research Needed
-
-- **Optimal workgroup size** for tessellation (likely 8x8 or 16x16)
-- **Index buffer generation**: Can also be done in compute, or use a fixed pattern
-- **Normal calculation**: Central differences from displacement map vs. cross product of edges
-- **Memory budget**: 64 px/deg = 23040x11520 at full res; need hierarchical approach
+*See Part 4: CDLOD Implementation Plan for the current approach.*
 
 ---
 
-## M9: Ray-Traced Shadow Maps (Future)
+## M20: Ray-Traced Shadow Maps (After M13)
+
+> **Scheduling Note:** This milestone is tentatively scheduled after M13 (Heightmap Displacement). It can be implemented once CDLOD terrain is rendering displaced geometry.
 
 **Goal**: Replace rasterized shadow maps with compute-based ray tracing for accurate self-shadowing on lunar terrain.
 
@@ -884,7 +796,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 ```
 +-----------------+     +-------------------+     +----------------+
 | Triangle Buffer | --> | Compute Shader    | --> | Shadow Texture |
-| (from M8)       |     | (Ray-Triangle)    |     | (R8 or R32F)   |
+| (from CDLOD)    |     | (Ray-Triangle)    |     | (R8 or R32F)   |
 +-----------------+     +-------------------+     +----------------+
                                ^
                                |
@@ -903,7 +815,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 2. **Screen-Space vs. Light-Space**:
    - Screen-space: Cast rays from visible pixels toward sun
    - Light-space: Traditional shadow map approach but with ray tracing
-   
+
    Recommend screen-space for initial implementation.
 
 3. **Soft Shadows**: Sample multiple rays in cone toward sun disk (physically accurate for lunar surface)
@@ -920,11 +832,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     // Reconstruct world position from depth buffer
     let worldPos = reconstructWorldPos(id.xy, depthTexture);
-    
+
     // Ray toward sun
     let rayDir = -light.direction;
     let rayOrigin = worldPos + rayDir * BIAS;
-    
+
     // Iterate triangles (or traverse BVH)
     var inShadow = 0.0;
     for (var i = 0u; i < arrayLength(&triangles); i++) {
@@ -933,7 +845,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             break;
         }
     }
-    
+
     textureStore(shadowMap, id.xy, vec4(1.0 - inShadow));
 }
 ```
@@ -943,64 +855,6 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 - **BVH construction** in WebGPU (GPU-accelerated vs. CPU build)
 - **Hybrid approach**: Use rasterized shadow map for initial occlusion test, ray trace only near shadow boundaries
 - **Temporal stability**: Reproject shadows from previous frame to reduce flickering
-
----
-
-## Appendix: Insights and Recommendations
-
-### Texture Format Decisions
-
-#### Color/Albedo Map
-
-| Aspect | Decision | Rationale |
-|--------|----------|-----------|
-| Bit depth | 8-bit | sRGB encoding provides 12-bit perceptual precision |
-| Color space | sRGB | GPU linearizes on sample (hardware accelerated) |
-| Container | KTX2 | Pre-baked mipmaps, Zstd compression |
-| Compression | Zstd (lossless) | Preserves albedo values exactly |
-
-```bash
-ktx create --format R8G8B8_SRGB --generate-mipmap --zstd 19 output.ktx2 input.png
-```
-
-#### Displacement Map
-
-| Aspect | Decision | Rationale |
-|--------|----------|-----------|
-| Bit depth | 16-bit | Terrain precision requires full dynamic range |
-| Format | TIFF (source) | Read directly, no conversion loss |
-| Processing | Compute shader | Direct GPU vertex generation |
-| Mipmaps | None | LOD handled by tessellation, not texture filtering |
-
-The displacement map is processed differently than a typical texture — it's data for mesh generation, not a render texture.
-
-### Coordinate System Alignment
-
-NASA maps use:
-- Longitude 0 deg at center of image
-- Latitude 90N at top, 90S at bottom
-
-Standard equirectangular sphere mapping expects:
-- U=0 at longitude -180 (or 180), U=1 at longitude 180
-- V=0 at north pole, V=1 at south pole
-
-**May need UV offset**: Shift U by 0.5 to align 0 deg longitude correctly.
-
-### Performance Targets
-
-| Milestone | Target | Notes |
-|-----------|--------|-------|
-| M7 (Textured) | 60 FPS | Simple sphere, negligible GPU load |
-| M8 (Displaced) | 30+ FPS | Compute tessellation is one-time per view change |
-| M9 (Ray Shadows) | 30+ FPS | Depends heavily on triangle count and BVH quality |
-
-### Progressive Enhancement Path
-
-1. **M7**: Textured sphere - proves texture pipeline works
-2. **M8a**: Uniform displacement - no LOD, fixed tessellation
-3. **M8b**: Add LOD with CDLOD or quadtree
-4. **M9a**: Brute-force ray shadows (limited triangles)
-5. **M9b**: BVH-accelerated shadows for full terrain
 
 ---
 
@@ -1186,6 +1040,9 @@ Based on developer interview:
 - No texture swimming or aliasing artifacts
 - Mip level selection prevents over-sampling at distance
 
+**Open Questions:**
+- **Coordinate alignment:** NASA maps place longitude 0° at image center, latitude 90°N at top. Standard equirectangular mapping expects U=0 at longitude -180°. May need UV offset (shift U by 0.5) to align correctly. Verify during implementation.
+
 ---
 
 ## Phase 3: Quality Refinement
@@ -1350,6 +1207,7 @@ Based on developer interview:
 | 2 | M11 | Static grid mesh & instancing | M9 |
 | 2 | M12 | Cube-to-sphere projection | M11 |
 | 2 | M13 | Heightmap displacement | M12 |
+| 2 | M20 | Ray-traced shadow maps | M13 (tentative) |
 | 3 | M14 | Distance-based blend geomorphing | M13 |
 | 3 | M15 | Full per-vertex geomorphing | M14 |
 | 3 | M16 | Analytic normal reconstruction | M15 |
@@ -1375,6 +1233,7 @@ Each milestone includes:
 | M16 (Analytic) | 45+ FPS | Per-pixel normal calculation overhead |
 | M18 (Hapke) | 30+ FPS | Complex BRDF, acceptable for accuracy |
 | M19 (Streaming) | 30+ FPS | I/O-bound, depends on tile cache hit rate |
+| M20 (Shadows) | 30+ FPS | Depends on BVH quality and triangle count |
 
 ---
 
