@@ -1,6 +1,49 @@
 # LunaVis Development Log
 
-## 2026-02-01: M11 Instanced Terrain Rendering ✓
+## 2026-01-25: M11 Rendering Bug Fixes ✓
+
+**Problem:** CDLOD terrain geometry invisible despite no console errors.
+
+**Root Causes Found:**
+
+1. **Bounding sphere mismatch:** `QuadNode.boundingSphere` computed bounds for a unit sphere (normalized coordinates), but M11 renders a flat 2×2×2 cube. Bounding sphere radius was 1.01 but rendered corners were at distance 1.41 — frustum culling passed but geometry was outside the sphere.
+
+2. **GPUQueue.writeBuffer error:** Passing explicit `dataOffset` and `size` parameters to `writeBuffer` caused "Wrong data size" errors. The typed array view wasn't properly sized.
+
+3. **Stack overflow in stats:** `Math.max(...results.map(n => n.lodLevel))` spreads 100k+ nodes onto the call stack, causing `RangeError: Maximum call stack size exceeded`.
+
+4. **Excessive node count:** Default `maxLodLevel: 12` produced 164k nodes, far exceeding `MAX_NODES: 8192`.
+
+5. **WGSL struct alignment:** `TerrainConfig` used `vec3<f32>` for padding (16-byte alignment), but CPU allocated only 16 bytes total.
+
+**Fixes Applied:**
+
+- Added `QuadNode.cubeBoundingSphere` property for flat cube frustum culling
+- Added `LODSelector.useCubeBounds` config option (default: true for M11)
+- Fixed `writeBuffer` to use properly-sized `Float32Array` view
+- Replaced spread operator with simple for-loop for max LOD calculation
+- Lowered default `maxLodLevel` to 4 (1,536 nodes vs 164k)
+- Fixed WGSL padding: `vec3<f32>` → three `f32` fields
+
+**Files Updated:**
+```
+src/terrain/QuadNode.ts           # Added cubeBoundingSphere
+src/terrain/LODSelector.ts        # Added useCubeBounds, fixed stack overflow
+src/terrain/TerrainRenderer.ts    # Fixed writeBuffer, stack overflow, default config
+src/shaders/terrain-flat.wgsl     # Fixed TerrainConfig struct alignment
+```
+
+**Tests Added:**
+```
+tests/cdlod-diagnostic.test.ts        # 9 tests for render pipeline stages
+tests/cdlod-render-diagnostic.test.ts # 8 tests for culling, bounds, transforms
+```
+
+**Verification:** Smoke test passes; terrain geometry visible in browser.
+
+---
+
+## 2026-01-24: M11 Instanced Terrain Rendering ✓
 
 **Goal:** Render many CDLOD patches via a single instanced draw call (flat cube faces).
 

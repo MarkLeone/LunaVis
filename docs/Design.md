@@ -193,6 +193,17 @@ for (lod = 0; lod <= maxLod; lod++) {
 
 **Debug Output:** LOD-based coloring in the fragment shader to visualize selection quality.
 
+### Bounding Sphere Variants
+
+**Decision:** Provide separate bounding sphere calculations for flat cube (M11) and spherified cube (future) rendering.
+
+**Rationale:** M11 renders geometry on a 2×2×2 cube centered at origin. The original `boundingSphere` normalizes corner positions to a unit sphere (radius ~1.0), but flat cube corners are at distance ~1.41 from the center. Frustum culling with mismatched bounds causes geometry to be incorrectly classified as visible while actually lying outside the bounding volume.
+
+**Implementation:**
+- `boundingSphere` — corners normalized to unit sphere + 10% margin (for spherified terrain)
+- `cubeBoundingSphere` — raw cube coordinates + 1% margin (for flat M11 terrain)
+- `LODSelector.useCubeBounds` config selects which variant to use (default: true)
+
 ### Relative-to-Eye (RTE) Coordinates
 
 **Decision:** Compute camera-relative positions on CPU, pass to GPU as float32.

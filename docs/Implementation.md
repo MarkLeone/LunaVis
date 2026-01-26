@@ -403,6 +403,25 @@ padded.set(indices);
 device.queue.writeBuffer(buffer, 0, padded);
 ```
 
+### writeBuffer with Partial Data
+
+When writing only part of a typed array, create a view of the exact data needed:
+
+```typescript
+// WRONG: Explicit size parameter can cause "Wrong data size" errors
+device.queue.writeBuffer(buffer, 0, data, 0, count * BYTES_PER_ELEMENT);
+
+// CORRECT: Create a properly-sized view
+const dataToWrite = new Float32Array(
+  data.buffer,
+  data.byteOffset,
+  count * FLOATS_PER_ELEMENT
+);
+device.queue.writeBuffer(buffer, 0, dataToWrite);
+```
+
+The explicit `dataOffset` and `size` parameters to `writeBuffer` have subtle semantics with typed arrays — creating a view is more reliable.
+
 ### WGSL Uniform Struct Alignment
 
 **Critical:** WGSL types in uniform buffers have strict alignment requirements:
@@ -489,12 +508,21 @@ normalizeToSphere(cubeDir): Float64Array {
 
 ### Bounding Sphere Calculation
 
-Each node's bounding sphere encompasses its spherified patch:
+QuadNode provides two bounding sphere variants:
 
-1. Compute patch center on unit sphere
-2. Sample 4 corners on sphere
+**`boundingSphere`** — For spherified cube terrain (future):
+1. Compute patch center on unit sphere (normalized)
+2. Sample 4 corners on unit sphere
 3. Find max distance from center to any corner
 4. Add 10% margin for surface curvature
+
+**`cubeBoundingSphere`** — For flat cube terrain (M11):
+1. Compute patch center on cube face (not normalized)
+2. Sample 4 corners on cube face
+3. Find max distance from center to any corner
+4. Add 1% margin for numerical precision
+
+**Critical:** M11 renders a 2×2×2 cube, not a unit sphere. Using `boundingSphere` for frustum culling would cause geometry to appear outside the bounding volume (radius 1.01 vs actual corner distance 1.41). The `LODSelector.useCubeBounds` config (default: true) selects the appropriate bounding sphere for the current render mode.
 
 Bounding spheres are cached (computed once per node).
 
