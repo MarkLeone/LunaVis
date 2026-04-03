@@ -55,7 +55,7 @@ const MODELS: Record<string, ModelConfig> = {
 };
 
 /** Default model to load */
-const DEFAULT_MODEL = 'CDLOD Sphere';
+const DEFAULT_MODEL = 'Moon';
 
 /**
  * Emit a structured event for test verification.
